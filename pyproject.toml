@@ -1,0 +1,102 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyinfluence"
+version = "0.1.0"
+description = "Training data attribution for scikit-learn models"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Marc-Andre Schulz", email = "marc.a.schulz@gmail.com"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["machine-learning", "interpretability", "influence-functions", "sklearn"]
+
+dependencies = [
+    "joblib>=1.0",
+    "numpy>=1.20",
+    "scipy>=1.7",
+    "scikit-learn>=1.0",
+    "tqdm>=4.60",
+]
+
+[project.optional-dependencies]
+viz = ["matplotlib>=3.5"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+    "matplotlib>=3.5",
+]
+
+[project.urls]
+Repository = "https://github.com/maschulz/pyinfluence"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pyinfluence*"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --cov=pyinfluence --cov-report=term-missing"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "osx-64", "linux-64"]
+
+[tool.pixi.dependencies]
+joblib = ">=1.0"
+numpy = ">=1.20"
+scipy = ">=1.7"
+scikit-learn = ">=1.0"
+tqdm = ">=4.60"
+ipykernel = ">=6.30.1,<8"
+
+[tool.pixi.pypi-dependencies]
+pyinfluence = { path = ".", editable = true, extras = ["dev", "viz"] }
+
+[tool.pixi.feature.py39.dependencies]
+python = "3.9.*"
+[tool.pixi.feature.py310.dependencies]
+python = "3.10.*"
+[tool.pixi.feature.py311.dependencies]
+python = "3.11.*"
+[tool.pixi.feature.py312.dependencies]
+python = "3.12.*"
+
+[tool.pixi.environments]
+default = ["py312"]
+py39 = ["py39"]
+py310 = ["py310"]
+py311 = ["py311"]
+
+[tool.pixi.tasks]
+test = "pytest"
+test-fast = "pytest -m 'not slow'"
+lint = "ruff check ."
+fmt = "ruff format ."
+fmt-check = "ruff format --check ."
