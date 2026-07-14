@@ -146,7 +146,7 @@ def test_ridge_regression_mean_pred_gap():
     a = (rng.uniform(size=2 * n) < 0.5).astype(float)
     X = rng.normal(size=(2 * n, p))
     y = X @ rng.normal(size=p) + 0.8 * a + rng.normal(scale=0.5, size=2 * n)
-    Xtr, ytr, atr = X[:n], y[:n], a[:n]
+    Xtr, ytr = X[:n], y[:n]
     Xau, aau = X[n:], a[n:]
     alpha = 2.0
     model = Ridge(alpha=alpha).fit(Xtr, ytr)
@@ -269,3 +269,76 @@ class TestValidation:
         scores = attr.explain(Xau, sensitive_audit=aau)
         assert scores.shape == (len(ytr),)
         assert np.isfinite(scores).all()
+
+    @pytest.mark.parametrize(
+        "attr_cls",
+        [FairnessInfluenceFunctions, RefitFairnessInfluence, SubsampledFairnessInfluence],
+        ids=["closed_form", "refit", "subsampled"],
+    )
+    def test_explain_positional_args_raise_type_error(self, biased_logistic, attr_cls):
+        """explain(X, y, sensitive) positionally must fail: y_audit and
+        sensitive_audit are keyword-only so a sensitive attribute can never
+        silently bind to the label slot. Keyword-only enforcement happens at
+        argument-binding time, so this raises even on an unfitted attributor."""
+        model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
+        attr = attr_cls(metric="dp")
+        with pytest.raises(TypeError):
+            attr.explain(Xau, yau, aau)
+
+
+# -----------------------------------------------------------------------------
+# disparity_removal_curve: base_disparity is the full model's value
+# -----------------------------------------------------------------------------
+
+
+def test_disparity_removal_curve_base_disparity_is_full_model_value(biased_logistic):
+    """With fractions=[0.1] (no zero), base_disparity must equal
+    disparity_value() of the *full* model, not the post-removal value at the
+    smallest requested fraction."""
+    model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
+    attr = FairnessInfluenceFunctions(metric="dp", target="absolute", damping=1e-8)
+    attr.fit(model, Xtr, ytr)
+    scores = attr.explain(Xau, sensitive_audit=aau)
+
+    curve = disparity_removal_curve(
+        scores, model, Xtr, ytr, Xau, aau, y_audit=yau,
+        metric="dp", target="absolute",
+        fractions=[0.1], n_random=0,
+    )
+    expected = disparity_value(
+        model, Xau, aau, y=yau, metric="dp", target="absolute"
+    )
+    assert curve["base_disparity"] == pytest.approx(expected)
+    assert curve["base_disparity"] != pytest.approx(curve["disparity"][0])
+
+
+# -----------------------------------------------------------------------------
+# SubsampledFairnessInfluence.explain(metric=..., target=...) override
+# -----------------------------------------------------------------------------
+
+
+def test_subsampled_explain_metric_override_matches_dedicated_attributor(
+    biased_logistic,
+):
+    """Overriding metric/target in explain() reuses the fitted subset models
+    (same masks), so the result must equal a second attributor constructed
+    with that metric directly (same random_state -> same subset masks)."""
+    model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
+
+    attr = SubsampledFairnessInfluence(
+        metric="dp", n_subsets=30, subset_frac=0.6, random_state=7, verbose=0
+    )
+    attr.fit(model, Xtr, ytr)
+    override_scores = attr.explain(
+        Xau, y_audit=yau, sensitive_audit=aau, metric="eopp"
+    )
+
+    dedicated = SubsampledFairnessInfluence(
+        metric="eopp", n_subsets=30, subset_frac=0.6, random_state=7, verbose=0
+    )
+    dedicated.fit(model, Xtr, ytr)
+    dedicated_scores = dedicated.explain(Xau, y_audit=yau, sensitive_audit=aau)
+
+    np.testing.assert_allclose(
+        override_scores, dedicated_scores, equal_nan=True
+    )

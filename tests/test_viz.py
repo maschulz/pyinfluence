@@ -69,6 +69,7 @@ def errors(self_inf, rng):
 def fitted_ridge_attr():
     """Tiny fitted Ridge + InfluenceFunctions attributor for report()/curve."""
     from sklearn.linear_model import Ridge
+
     from pyinfluence import InfluenceFunctions
 
     rng = np.random.default_rng(0)
@@ -116,6 +117,31 @@ def test_top_influencers_labels(scores_2d):
     _assert_fig_ax(
         viz.plot_top_influencers(scores_2d, test_idx=0, k=3, labels=labels)
     )
+
+
+def test_top_influencers_nan_excluded(scores_1d):
+    """NaN scores must never be ranked as top influencers."""
+    from pyinfluence import viz
+    s = scores_1d.copy()
+    top_val_idx = int(np.argmax(s))
+    s[[0, 1]] = np.nan
+    fig, ax = viz.plot_top_influencers(s, k=3)
+    ticks = [t.get_text() for t in ax.get_yticklabels()]
+    assert "0" not in ticks and "1" not in ticks
+    assert str(top_val_idx) in ticks
+    plt.close(fig)
+
+
+def test_top_influencers_xerr(scores_2d, rng):
+    from pyinfluence import viz
+    xerr = np.abs(rng.normal(scale=0.05, size=scores_2d.shape))
+    _assert_fig_ax(viz.plot_top_influencers(scores_2d, test_idx=1, k=4, xerr=xerr))
+
+
+def test_top_influencers_xerr_shape_mismatch(scores_1d):
+    from pyinfluence import viz
+    with pytest.raises(ValueError):
+        viz.plot_top_influencers(scores_1d, xerr=np.ones(3))
 
 
 def test_top_influencers_accepts_ax(scores_2d):
@@ -220,11 +246,6 @@ def test_heatmap_top_k_none(scores_2d):
     _assert_fig_ax(viz.plot_heatmap(scores_2d, top_k=None))
 
 
-def test_heatmap_cluster(scores_2d):
-    from pyinfluence import viz
-    _assert_fig_ax(viz.plot_heatmap(scores_2d, cluster=True, top_k=10))
-
-
 def test_heatmap_invalid_dim():
     from pyinfluence import viz
     with pytest.raises(ValueError):
@@ -306,6 +327,120 @@ def test_removal_curve_invalid_direction(fitted_ridge_attr):
     attr, X_test, y_test = fitted_ridge_attr
     with pytest.raises(ValueError):
         removal_curve(attr, X_test, y_test, fractions=[0.0], direction="sideways")
+
+
+# -----------------------------------------------------------------------------
+# plot_disparity_curve
+# -----------------------------------------------------------------------------
+
+
+def _fake_disparity_curve(with_random=True, with_hard=True):
+    f = np.linspace(0.0, 0.2, 5)
+    curve = {
+        "fractions": f,
+        "disparity": 0.1 - 0.3 * f,
+        "disparity_hard": (0.12 - 0.3 * f) if with_hard else np.full(5, np.nan),
+        "accuracy": np.full(5, 0.9),
+        "random_disparity_mean": np.full(5, 0.1) if with_random else np.array([]),
+        "random_disparity_std": np.full(5, 0.01) if with_random else np.array([]),
+        "base_disparity": 0.1,
+    }
+    return curve
+
+
+def test_disparity_curve():
+    from pyinfluence import viz
+    _assert_fig_ax(viz.plot_disparity_curve(_fake_disparity_curve()))
+
+
+def test_disparity_curve_no_hard_no_random():
+    from pyinfluence import viz
+    _assert_fig_ax(viz.plot_disparity_curve(
+        _fake_disparity_curve(with_random=False, with_hard=False)
+    ))
+
+
+def test_disparity_curve_end_to_end():
+    """Round-trip: fairness.disparity_removal_curve output plots directly."""
+    from sklearn.linear_model import LogisticRegression
+
+    from pyinfluence import viz
+    from pyinfluence.fairness import (
+        FairnessInfluenceFunctions,
+        disparity_removal_curve,
+    )
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(80, 4))
+    y = (X[:, 0] + 0.5 * rng.normal(size=80) > 0).astype(int)
+    a = (rng.uniform(size=80) < 0.5).astype(int)
+    model = LogisticRegression(max_iter=1000).fit(X, y)
+    attr = FairnessInfluenceFunctions(metric="dp").fit(model, X, y)
+    scores = attr.explain(X, sensitive_audit=a)
+    curve = disparity_removal_curve(
+        scores, model, X, y, X, a, y_audit=y,
+        fractions=np.linspace(0.0, 0.1, 3), n_random=2, random_state=0,
+    )
+    _assert_fig_ax(viz.plot_disparity_curve(curve))
+
+
+# -----------------------------------------------------------------------------
+# plot_detection_curve
+# -----------------------------------------------------------------------------
+
+
+def test_detection_curve(self_inf):
+    from pyinfluence import viz
+    corrupted = np.zeros(self_inf.size, dtype=bool)
+    corrupted[[3, 12, 25]] = True
+    fig, ax = viz.plot_detection_curve(self_inf, corrupted)
+    # The inflated outliers are exactly the corrupted set: the curve must
+    # reach full recall long before full inspection.
+    line = ax.get_lines()[0]
+    y = line.get_ydata()
+    assert y[self_inf.size // 2] == 1.0
+    plt.close(fig)
+
+
+def test_detection_curve_nan_ranked_last(self_inf):
+    from pyinfluence import viz
+    s = self_inf.copy()
+    s[3] = np.nan  # corrupted-and-NaN: found only at the very end
+    corrupted = np.zeros(s.size, dtype=bool)
+    corrupted[[3, 12]] = True
+    fig, ax = viz.plot_detection_curve(s, corrupted)
+    y = ax.get_lines()[0].get_ydata()
+    assert y[-2] < 1.0 and y[-1] == 1.0
+    plt.close(fig)
+
+
+def test_detection_curve_validation(self_inf):
+    from pyinfluence import viz
+    with pytest.raises(ValueError):
+        viz.plot_detection_curve(self_inf, np.zeros(self_inf.size, dtype=bool))
+    with pytest.raises(ValueError):
+        viz.plot_detection_curve(self_inf, np.ones(3, dtype=bool))
+
+
+# -----------------------------------------------------------------------------
+# plot_influence_concentration
+# -----------------------------------------------------------------------------
+
+
+def test_influence_concentration_2d(scores_2d):
+    from pyinfluence import viz
+    _assert_fig_ax(viz.plot_influence_concentration(scores_2d))
+
+
+def test_influence_concentration_1d(scores_1d):
+    from pyinfluence import viz
+    _assert_fig_ax(viz.plot_influence_concentration(scores_1d, mark_share=None))
+
+
+def test_influence_concentration_all_zero():
+    from pyinfluence import viz
+    with pytest.raises(ValueError):
+        viz.plot_influence_concentration(np.zeros(10))
 
 
 # -----------------------------------------------------------------------------

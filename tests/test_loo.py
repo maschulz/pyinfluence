@@ -120,3 +120,16 @@ def test_prediction_method(fitted_fixture, is_regression, request):
         baseline = model.predict(X_test)
         loo_pred = loo.loo_models_[j].predict(X_test)
         np.testing.assert_allclose(scores[:, j], baseline - loo_pred)
+
+
+class TestLOOSelfInfluenceDiag:
+    """_self_influence_diag() matches the diagonal of the full score matrix."""
+
+    def test_matches_diagonal_of_explain(self, fitted_ridge):
+        model, X_train, y_train, X_test, y_test = fitted_ridge
+        loo = LOOInfluence(mode="loss", verbose=0)
+        loo.fit(model, X_train, y_train)
+
+        diag_direct = loo._self_influence_diag()
+        full = loo.explain(X_train, y_train)
+        np.testing.assert_allclose(diag_direct, np.diag(full), equal_nan=True)

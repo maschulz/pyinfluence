@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 from sklearn.base import BaseEstimator
 
-from pyinfluence._base import BaseAttributor
 from pyinfluence._banzhaf import BanzhafInfluence
+from pyinfluence._base import BaseAttributor
 from pyinfluence._bootstrap import BootstrapInfluence
 from pyinfluence._influence import InfluenceFunctions
 from pyinfluence._loo import LOOInfluence
-from pyinfluence._validation import get_model_type
+from pyinfluence._validation import (
+    get_model_type,
+    influence_function_incompatibility,
+)
 
 __all__ = ["influence"]
 
@@ -51,7 +55,11 @@ def influence(
     X_test : array-like of shape (n_test, n_features)
         Test features to explain.
     y_test : array-like of shape (n_test,) or None, optional
-        Test labels. Required when ``mode='loss'``. Ignored when ``mode='prediction'``.
+        Test labels. Required when ``mode='loss'``. In ``mode='prediction'``,
+        required for classifiers when the resolved method is a refit-based
+        one (``loo``, ``banzhaf``, ``bootstrap``), which measure influence on
+        the true-class score; not needed for regression or for
+        ``InfluenceFunctions`` on binary classifiers.
     method : {'auto', 'influence_functions', 'loo', 'banzhaf', 'bootstrap'}, default='auto'
         Which attribution method to use. ``'auto'`` selects from the model type
         (influence functions for supported linear models, else ``fallback``).
@@ -130,6 +138,35 @@ def influence(
             use_if = n_classes == 2
         else:
             use_if = model_type in ("ridge", "linear", "kernel_ridge")
+
+        # A supported model type can still carry a configuration the
+        # closed form cannot represent (class_weight, l1 penalty, ...);
+        # fall back rather than produce silently degraded scores.
+        if use_if:
+            reason = influence_function_incompatibility(model)
+            if reason is not None:
+                warnings.warn(
+                    f"method='auto' is falling back to '{fallback}' because "
+                    f"{reason}.",
+                    UserWarning,
+                )
+                use_if = False
+
+        # Wrapped estimators (Pipeline, GridSearchCV, ...) are not unwrapped;
+        # tell the user why a linear model inside one is not getting the
+        # closed-form treatment.
+        if model_type == "unsupported" and (
+            hasattr(model, "steps") or hasattr(model, "best_estimator_")
+        ):
+            warnings.warn(
+                f"{type(model).__name__} wraps its estimator, and method='auto' "
+                "does not unwrap it; using the refit-based fallback "
+                f"'{fallback}'. To use InfluenceFunctions on a wrapped linear "
+                "model, pass the fitted inner estimator (e.g. "
+                "pipeline[-1] or search.best_estimator_) with correspondingly "
+                "transformed features.",
+                UserWarning,
+            )
 
         if use_if:
             attributor_cls = InfluenceFunctions

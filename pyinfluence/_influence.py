@@ -10,10 +10,10 @@ from sklearn.base import BaseEstimator
 
 from pyinfluence._base import (
     BaseAttributor,
-    check_is_fitted,
     _prepare_explain_inputs,
     _prepare_fit_inputs,
     _validate_mode,
+    check_is_fitted,
 )
 from pyinfluence._linear import (
     _augment_intercept,
@@ -26,7 +26,11 @@ from pyinfluence._linear import (
     _hessian_ridge,
     _invert_hessian,
 )
-from pyinfluence._validation import extract_regularization, validate_model
+from pyinfluence._validation import (
+    extract_regularization,
+    validate_labels_in_classes,
+    validate_model,
+)
 
 if TYPE_CHECKING:
     from typing import Self
@@ -50,9 +54,11 @@ class InfluenceFunctions(BaseAttributor):
 
         - 'prediction': Influence on predicted value. No y_test required.
           For regression: influence on model.predict(X_test).
-          For classification: influence on predicted probability (e.g. P(Y=1)),
-          so the true label is not needed. (LOO/Banzhaf/Bootstrap instead define
-          prediction as change in true-class probability and thus require y_test.)
+          For LogisticRegression (binary): influence on the positive-class
+          probability P(Y=classes_[1] | x). For RidgeClassifier (binary):
+          influence on the linear decision value (no probability available).
+          The true label is not needed. (LOO/Banzhaf/Bootstrap instead define
+          prediction as change in true-class score and thus require y_test.)
           Positive = upweighting increases predicted value.
           Negative = upweighting decreases predicted value.
 
@@ -62,21 +68,25 @@ class InfluenceFunctions(BaseAttributor):
     Attributes
     ----------
     H_inv_ : ndarray
-        Inverse Hessian matrix (computed during fit).
-        For binary classification: ndarray of shape (n_features, n_features).
+        Inverse Hessian matrix (computed during fit). Shape (p, p) where
+        p = n_features (+1 if the model has an intercept); for KernelRidge
+        the Hessian lives in dual space and p = n_train.
     train_grads_ : ndarray
-        Per-sample gradients on training data.
-        For binary classification: ndarray of shape (n_samples, n_features).
+        Per-sample gradients on training data, shape (n_samples, p) with
+        p as for ``H_inv_``.
     model_type_ : str
-        Detected model type ('ridge', 'logistic', 'linear').
+        Detected model type ('ridge', 'linear', 'logistic',
+        'ridge_classifier', 'kernel_ridge').
     model_ : sklearn estimator
         Reference to the fitted model.
     X_train_ : ndarray
-        Training features (possibly augmented with intercept).
+        Training features (possibly augmented with intercept; the kernel
+        matrix for KernelRidge).
     y_train_ : ndarray
         Training targets.
     n_classes_ : int
-        Number of classes (1 for regression, 2+ for classification).
+        2 for binary LogisticRegression; 1 otherwise (regression models and
+        RidgeClassifier, which is treated as regression on ±1 targets).
 
     Supported Models
     ----------------
@@ -126,6 +136,8 @@ class InfluenceFunctions(BaseAttributor):
             If model is unsupported, not fitted, or mode is invalid.
         """
         _validate_mode(self.mode)
+        if self.damping < 0:
+            raise ValueError(f"damping must be non-negative; got {self.damping}.")
         self.model_type_ = validate_model(model)
         self.model_ = model
         X, y = _prepare_fit_inputs(X, y)
@@ -164,6 +176,7 @@ class InfluenceFunctions(BaseAttributor):
             self._fit_regression(X_aug, y, reg_lambda)
         elif self.model_type_ == "ridge_classifier":
             # Binarize labels to {-1, +1} matching RidgeClassifier internals
+            y = validate_labels_in_classes(y, model.classes_, name="y")
             y_binary = np.where(y == model.classes_[1], 1.0, -1.0)
             self.classes_ = model.classes_
             self._fit_regression(X_aug, y_binary, reg_lambda)
@@ -219,16 +232,20 @@ class InfluenceFunctions(BaseAttributor):
         reg_lambda: float,
     ) -> None:
         """Fit for binary logistic regression."""
-        # Get predicted probabilities for class 1
+        # Get predicted probabilities for classes_[1]
         probs = self.model_.predict_proba(self.X_train_raw_)[:, 1]
 
         # Compute Hessian and its inverse
         H = _hessian_logistic(X_aug, probs, reg_lambda, self.damping, self.has_intercept_)
         self.H_inv_ = _invert_hessian(H)
 
-        # Compute training gradients
-        # For binary, y should be 0/1, and we use probs for class 1
-        self.train_grads_ = _gradients_logistic(X_aug, y, probs)
+        # Compute training gradients. The NLL gradient needs y as a 0/1
+        # indicator of classes_[1] (the class probs refers to); raw label
+        # values ({-1,+1}, {1,2}, strings, ...) would silently corrupt it.
+        y = validate_labels_in_classes(y, self.model_.classes_, name="y")
+        y01 = (y == self.model_.classes_[1]).astype(float)
+        self.classes_ = self.model_.classes_
+        self.train_grads_ = _gradients_logistic(X_aug, y01, probs)
         self.train_probs_ = probs
 
     def _fit_kernel_ridge(
@@ -315,6 +332,7 @@ class InfluenceFunctions(BaseAttributor):
             If mode='loss' and y_test is None.
         """
         check_is_fitted(self, ["model_", "H_inv_", "train_grads_"])
+        _validate_mode(self.mode)
         X_test, y_test = _prepare_explain_inputs(
             X_test,
             y_test,
@@ -341,6 +359,9 @@ class InfluenceFunctions(BaseAttributor):
         elif self.model_type_ == "ridge_classifier":
             # Binarize test labels for loss mode
             if y_test is not None:
+                y_test = validate_labels_in_classes(
+                    y_test, self.classes_, name="y_test"
+                )
                 y_test = np.where(y_test == self.classes_[1], 1.0, -1.0)
             return self._score_regression(X_test_aug, y_test)
         elif self.model_type_ == "logistic":
@@ -409,7 +430,7 @@ class InfluenceFunctions(BaseAttributor):
         """
         Compute test gradients for loss mode (binary logistic).
 
-        For NLL: ∇L(z_test) = -(y_test - p_test) * x_test
+        For NLL: ∇L(z_test) = -(1{y_test = classes_[1]} - p_test) * x_test
         """
         # Get raw X_test for predict_proba
         if self.has_intercept_:
@@ -418,7 +439,11 @@ class InfluenceFunctions(BaseAttributor):
             X_test_raw = X_test_aug
 
         probs = self.model_.predict_proba(X_test_raw)[:, 1]
-        return _gradients_logistic(X_test_aug, y_test, probs)
+        y_test = validate_labels_in_classes(
+            y_test, self.model_.classes_, name="y_test"
+        )
+        y01 = (y_test == self.model_.classes_[1]).astype(float)
+        return _gradients_logistic(X_test_aug, y01, probs)
 
     def _compute_test_grads_prediction_logistic_binary(
         self, X_test_aug: NDArray[np.floating]
@@ -436,6 +461,38 @@ class InfluenceFunctions(BaseAttributor):
         probs = self.model_.predict_proba(X_test_raw)[:, 1]
         weights = probs * (1 - probs)
         return X_test_aug * weights[:, np.newaxis]
+
+    def _self_influence_diag(self) -> NDArray[np.floating]:
+        """
+        Diagonal of the train-vs-train influence matrix without forming it.
+
+        Used by ``pyinfluence.self_influence``: O(n p^2) time and O(n p)
+        memory instead of the O(n^2) score matrix.
+        """
+        check_is_fitted(self, ["model_", "H_inv_", "train_grads_"])
+        n_train = self.train_grads_.shape[0]
+        if self.mode == "loss":
+            # The loss gradient at training point j *is* train_grads_[j]
+            # (same formula, same labels, same probabilities).
+            test_grads = self.train_grads_
+            sign = 1.0
+        else:
+            if self.model_type_ == "kernel_ridge":
+                test_grads = self.K_train_
+            elif self.model_type_ == "logistic":
+                test_grads = self._compute_test_grads_prediction_logistic_binary(
+                    self.X_train_
+                )
+            else:
+                test_grads = self._compute_test_grads_prediction_regression(
+                    self.X_train_
+                )
+            sign = -1.0
+        diag = (
+            np.einsum("ij,ij->i", test_grads @ self.H_inv_, self.train_grads_)
+            / n_train
+        )
+        return sign * diag
 
     # -----------------------------------------------------------------
     # KernelRidge scoring (dual space)

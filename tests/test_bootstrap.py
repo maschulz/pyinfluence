@@ -7,9 +7,8 @@ Here: BootstrapIndices (unit), Fit, Explain (modes), WithRandomForest.
 import numpy as np
 import pytest
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import Ridge
 
-from pyinfluence._bootstrap import _bootstrap_indices, BootstrapInfluence
+from pyinfluence._bootstrap import BootstrapInfluence, _bootstrap_indices
 from tests.helpers import assert_influence_scores_valid
 
 
@@ -98,4 +97,64 @@ class TestBootstrapWithRandomForest:
         assert_influence_scores_valid(
             scores, X_test.shape[0], X_train.shape[0],
             check_finite=False, check_not_all_zero=False,
+        )
+
+
+class TestBootstrapScoresStd:
+    """attr.scores_std_ after explain()."""
+
+    def test_shape_and_mostly_finite(self, small_fitted_ridge):
+        model, X_train, y_train, X_test, y_test = small_fitted_ridge
+        attr = BootstrapInfluence(
+            mode="loss", n_estimators=40, random_state=0, verbose=0
+        )
+        attr.fit(model, X_train, y_train)
+        scores = attr.explain(X_test, y_test)
+
+        assert hasattr(attr, "scores_std_")
+        assert attr.scores_std_.shape == scores.shape
+        # Most points get plenty of OOB/in-bag runs with n_estimators=40.
+        frac_finite = np.mean(np.isfinite(attr.scores_std_))
+        assert frac_finite > 0.5, f"only {frac_finite:.1%} of scores_std_ finite"
+
+
+class TestBootstrapNeverOOB:
+    """A training point that is in-bag in every run gets NaN, with a warning
+    naming the in-bag-in-every-run case specifically (not the every-OOB case)."""
+
+    def test_point_never_oob_is_nan_with_warning(self, small_fitted_ridge):
+        model, X_train, y_train, X_test, y_test = small_fitted_ridge
+        attr = BootstrapInfluence(
+            mode="loss", n_estimators=15, random_state=0, verbose=0
+        )
+        attr.fit(model, X_train, y_train)
+
+        # Force index 0 to be in-bag in every bootstrap run.
+        forced_in_bag = []
+        for indices in attr.in_bag_indices_:
+            if 0 not in indices:
+                indices = np.append(indices, 0)
+            forced_in_bag.append(indices)
+        attr.in_bag_indices_ = forced_in_bag
+
+        with pytest.warns(UserWarning, match="in-bag in every"):
+            scores = attr.explain(X_test, y_test)
+
+        assert np.isnan(scores[:, 0]).all()
+
+
+class TestBootstrapSelfInfluenceDiag:
+    """_self_influence_diag() matches the diagonal of the full score matrix."""
+
+    def test_matches_diagonal_of_explain(self, small_fitted_ridge):
+        model, X_train, y_train, X_test, y_test = small_fitted_ridge
+        attr = BootstrapInfluence(
+            mode="loss", n_estimators=25, random_state=0, verbose=0
+        )
+        attr.fit(model, X_train, y_train)
+
+        diag_direct = attr._self_influence_diag()
+        full = attr.explain(X_train, y_train)
+        np.testing.assert_allclose(
+            diag_direct, np.diag(full), equal_nan=True
         )

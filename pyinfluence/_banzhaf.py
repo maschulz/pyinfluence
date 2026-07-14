@@ -24,12 +24,13 @@ from tqdm import tqdm
 
 from pyinfluence._base import (
     BaseAttributor,
-    check_is_fitted,
     _prepare_explain_inputs,
     _prepare_fit_inputs,
     _validate_mode,
+    check_is_fitted,
 )
-from pyinfluence._utils import tqdm_joblib, _value_at_test
+from pyinfluence._utils import _value_at_test, tqdm_joblib
+from pyinfluence._validation import validate_refit_model
 
 if TYPE_CHECKING:
     from typing import Self
@@ -78,11 +79,12 @@ def _compute_marginal_contribution(
     marginal : ndarray of shape (n_test,) or None
         Per-test-point marginal contribution, or None if fitting failed.
     """
-    n_test = X_test.shape[0]
-
-    # Fit model on S (without idx)
-    if subset_mask.sum() < 2:
-        # Not enough points to fit
+    # Fit model on S (without idx). Only the empty subset is excluded a
+    # priori (no estimator can fit 0 samples); any other unfittable subset
+    # (e.g. single-class for a classifier) is dropped by the try/except
+    # below. Excluding small-but-fittable subsets would bias the estimator
+    # in exactly the small-n regime where Banzhaf is recommended.
+    if subset_mask.sum() < 1:
         return None
 
     try:
@@ -151,6 +153,8 @@ def _process_sample_batch(
     -------
     marginal_sum : ndarray of shape (n_test,)
         Sum of marginal contributions across MC samples.
+    marginal_sq_sum : ndarray of shape (n_test,)
+        Sum of squared marginal contributions (for the standard error).
     valid_count : int
         Number of valid (non-failed) samples.
     """
@@ -158,6 +162,7 @@ def _process_sample_batch(
     n_test = X_test.shape[0]
 
     marginal_sum = np.zeros(n_test)
+    marginal_sq_sum = np.zeros(n_test)
     valid_count = 0
 
     other_indices = np.array([i for i in range(n_train) if i != idx])
@@ -178,9 +183,10 @@ def _process_sample_batch(
 
         if marginal is not None:
             marginal_sum += marginal
+            marginal_sq_sum += marginal**2
             valid_count += 1
 
-    return marginal_sum, valid_count
+    return marginal_sum, marginal_sq_sum, valid_count
 
 
 class BanzhafInfluence(BaseAttributor):
@@ -245,6 +251,11 @@ class BanzhafInfluence(BaseAttributor):
         Whether the model is a classifier.
     n_train_ : int
         Number of training samples.
+    scores_std_ : ndarray of shape (n_test, n_train)
+        Monte Carlo standard error of the most recent ``explain`` call's
+        scores (NaN where fewer than two subset pairs succeeded). Use it to
+        judge whether a ranking is signal or sampling noise, e.g. via
+        ``viz.plot_top_influencers(scores, xerr=attr.scores_std_[i])``.
 
     Examples
     --------
@@ -259,6 +270,17 @@ class BanzhafInfluence(BaseAttributor):
     Computational complexity is O(n_samples × n_train × T) where T is the time
     to fit a single model. For large datasets or slow models, consider using
     fewer Monte Carlo samples or parallelization.
+
+    Unlike LOOInfluence and BootstrapInfluence, whose ``fit`` caches the
+    refitted models, the Banzhaf refit loop depends on nothing that ``fit``
+    could precompute per test set, and caching the 2 × n_samples × n_train
+    subset models would be prohibitive. The full Monte Carlo cost is
+    therefore paid on **every** ``explain`` call. Explain all test points of
+    interest in a single call rather than looping.
+
+    Points whose subset refits *all* fail (e.g. the only member of a rare
+    class) receive NaN scores and a warning — their value is unmeasurable
+    with this configuration, not zero.
 
     Unlike influence functions, Banzhaf values are model-agnostic and work
     with any sklearn estimator that implements fit() and predict()/predict_proba().
@@ -296,6 +318,7 @@ class BanzhafInfluence(BaseAttributor):
         self
         """
         _validate_mode(self.mode)
+        validate_refit_model(model)
         X, y = _prepare_fit_inputs(X, y)
         self.model_ = model
         self.X_train_ = X
@@ -322,6 +345,8 @@ class BanzhafInfluence(BaseAttributor):
         -------
         scores : ndarray of shape (m_samples, n_samples)
             scores[i, j] = Banzhaf value of training sample j for test sample i.
+            NaN where every subset refit for a point failed (with a warning).
+            The Monte Carlo standard error is stored in ``scores_std_``.
 
             For mode='loss':
                 Positive = helpful (adding sample decreases loss).
@@ -359,13 +384,11 @@ class BanzhafInfluence(BaseAttributor):
 
         if self.n_jobs is None or self.n_jobs == 1:
             # Sequential execution - use same per-point seeds as parallel
-            scores = np.zeros((n_test, n_train))
             idx_range = range(n_train)
             if self.verbose > 0:
                 idx_range = tqdm(idx_range, desc="Computing Banzhaf influence")
-            for idx in idx_range:
-                point_rng = np.random.default_rng(seeds[idx])
-                marginal_sum, valid_count = _process_sample_batch(
+            results = [
+                _process_sample_batch(
                     self.model_,
                     self.X_train_,
                     self.y_train_,
@@ -374,13 +397,11 @@ class BanzhafInfluence(BaseAttributor):
                     idx,
                     self.n_samples,
                     self.is_classifier_,
-                    point_rng,
+                    np.random.default_rng(seeds[idx]),
                     self.mode,
                 )
-                if valid_count > 0:
-                    scores[:, idx] = marginal_sum / valid_count
-                else:
-                    scores[:, idx] = 0.0
+                for idx in idx_range
+            ]
         else:
             # Parallel execution with optional progress bar
             with tqdm_joblib(
@@ -402,11 +423,33 @@ class BanzhafInfluence(BaseAttributor):
                     for idx in range(n_train)
                 )
 
-            scores = np.zeros((n_test, n_train))
-            for idx, (marginal_sum, valid_count) in enumerate(results):
-                if valid_count > 0:
-                    scores[:, idx] = marginal_sum / valid_count
-                else:
-                    scores[:, idx] = 0.0
+        scores = np.full((n_test, n_train), np.nan)
+        scores_std = np.full((n_test, n_train), np.nan)
+        unmeasured = []
+        for idx, (marginal_sum, marginal_sq_sum, valid_count) in enumerate(results):
+            if valid_count == 0:
+                # No subset produced a valid with/without pair: the value is
+                # unmeasurable with this configuration, NOT zero.
+                unmeasured.append(idx)
+                continue
+            mean = marginal_sum / valid_count
+            scores[:, idx] = mean
+            if valid_count >= 2:
+                # Standard error of the Monte Carlo mean
+                sample_var = (
+                    marginal_sq_sum - valid_count * mean**2
+                ) / (valid_count - 1)
+                scores_std[:, idx] = np.sqrt(
+                    np.maximum(sample_var, 0.0) / valid_count
+                )
+        if unmeasured:
+            warnings.warn(
+                f"All {self.n_samples} subset refits failed for "
+                f"{len(unmeasured)} training point(s) (e.g. every subset "
+                "without the point is single-class); their scores are NaN: "
+                f"{unmeasured[:10]}{'...' if len(unmeasured) > 10 else ''}",
+                UserWarning,
+            )
+        self.scores_std_ = scores_std
 
         return scores

@@ -72,7 +72,7 @@ print("Largest |self-influence| indices:", np.argsort(np.abs(s_self))[-10:][::-1
 print("Suspected mislabeled indices:", suspected[:10])
 ```
 
-Interpretation: `find_mislabeled` is a ranking heuristic (z-scores on $|S_{ii}|$); it is not a proof of label error.
+Interpretation: `find_mislabeled` is a ranking heuristic (z-scores on $|S_{ii}|$); it is not a proof of label error. Self-influence measures *atypicality*: plain per-sample training loss is an equally strong baseline, corrupted features (as opposed to labels) leave a trace it does not read, and detection degrades sharply for plausible, near-boundary errors. Validate on your data with an injection experiment (`viz.plot_detection_curve`) before trusting the ranking.
 
 ### 2) Comparing methods on the same problem
 
@@ -223,13 +223,17 @@ scores = influence(
 ## Utilities (analysis helpers)
 
 - `top_influential(scores, k=10)`: indices of most helpful / most harmful training points.
-- `self_influence(attributor, ...)`: diagonal of the influence matrix $S$ for training points explained against themselves.
-- `influence_summary(scores, ...)`: summary statistics (mean/std/percentiles/sparsity).
+- `self_influence(attributor, ...)`: diagonal of the influence matrix $S$ for training points explained against themselves. Uses a direct-diagonal fast path (O(n) memory) for InfluenceFunctions, LOOInfluence, and BootstrapInfluence.
+- `influence_summary(scores, ...)`: summary statistics (mean/std/percentiles/sparsity/NaN count).
 - `find_mislabeled(attributor, threshold="auto")`: flags outliers based on z-scores of absolute self-influence (heuristic).
 - `compare_attributors(attr1, attr2, ...)`: correlations and top-k overlap across two methods.
 - `aggregate_influence(scores, axis=0, method=...)`: aggregate across test points or train points.
 - `influence_by_group(scores, groups, ...)`: aggregate influence by group labels on training samples.
-- `removal_curve(attributor, X_test, y_test, ...)`: retrain after dropping the top-k% most harmful (or helpful) training points and compare to a random-removal baseline — the standard validation of whether influence scores carry signal.
+- `removal_curve(attributor, X_test, y_test, ...)`: retrain after dropping the top-k% most harmful (or helpful) training points and compare to a random-removal baseline — the standard validation of whether influence scores carry signal. Requires `mode='loss'`.
+- `stability_replicates(attributor, X_test, y_test, n_replicates=20)`: rerun the attributor on bootstrap-resampled training sets; feeds `viz.plot_top_k_stability`.
+- `supports(model)`: `(True, None)` if `InfluenceFunctions` can handle the fitted model, else `(False, reason)` — never raises or warns.
+
+**NaN policy.** Refit-based attributors produce NaN where a point's effect is unmeasurable (failed refits, no OOB runs) — with a warning naming the affected points. All utilities and plots then *exclude* NaN from rankings and statistics (again with a warning); NaN is never silently ranked, averaged, or treated as zero.
 
 ## Fairness attribution (`pyinfluence.fairness`)
 
@@ -254,28 +258,45 @@ curve = disparity_removal_curve(scores, model, X_train, y_train,
 - `RefitFairnessInfluence` — exact removal effects via refitting (model-agnostic ground truth).
 - `SubsampledFairnessInfluence` — Monte-Carlo subset estimator for arbitrary sklearn estimators (e.g. gradient boosting).
 - `disparity_value` / `disparity_value_hard` — smoothed and thresholded metric values; `group_removal_effect` — actual effect of removing a set.
+- **Custom metrics**: every `metric=` parameter also accepts a callable `metric(scores, sensitive, y) -> float` over the audit-set score vector — e.g. the bundled `cohens_d` (standardized group gap), quantile gaps, calibration gaps. The closed form differentiates the callable by finite differences (or an analytic `metric_grad=`), so it must be smooth; the refit-based estimators only evaluate it (rank/threshold metrics fine) and double as ground truth for validating any new metric. Caveat for scale-normalized metrics like Cohen's d: a point can shrink $|d|$ by inflating within-group variance rather than closing the gap — read the 'dp' attribution alongside.
+- All `explain` methods take the audit arrays as keyword-only arguments (`explain(X_audit, y_audit=..., sensitive_audit=...)`), so a sensitive attribute can never silently bind to the label slot. Plot repair curves with `viz.plot_disparity_curve(curve)`.
+
+**Scope: leverage, not fault.** Disparity-influence scores localize which records the measured gap *rests on* and predict what removals would do — they do not identify records whose labels or features are wrong. Within a group-by-outcome cell every attribution score is a function of the recorded features alone, so no attribution ranking can separate corrupted from legitimate records beyond what a feature-reading detector already sees; use per-sample error statistics (label noise) or group-conditional feature residuals (measurement corruption) for that, and use these scores to choose and validate repairs.
 
 Closed-form scores are validated against exact refitting (correlation *and* slope ≈ 1) in `tests/test_fairness.py`. Note: "fairness influence functions" as *feature*-level decomposition (Ghosh et al., FAccT 2023) is a different quantity; this module attributes disparities to training examples.
 
 ## Visualization (`pyinfluence.viz`)
 
-Plotting requires matplotlib (`pip install "pyinfluence[viz]"`). Each function takes pre-computed score arrays (not an attributor), returns `(fig, ax)`, and accepts an optional `ax=` for composition. The set is intentionally small — eight functions, each one chart — plus one report wrapper.
+Plotting requires matplotlib ≥ 3.9 (`pip install "pyinfluence[viz]"`). Each function takes pre-computed score arrays (not an attributor), returns `(fig, ax)`, and accepts an optional `ax=` for composition. NaN scores (failed refits) are excluded from rankings, matching the analysis utilities. The set is intentionally small — ten functions, each one chart — plus one report wrapper.
 
 | Function | When to use |
 |---|---|
-| `plot_top_influencers(scores, test_idx, k=10)` | Explain a single prediction: top-k helpful + top-k harmful for one test point. |
+| `plot_top_influencers(scores, test_idx, k=10, xerr=None)` | Explain a single prediction: top-k helpful + top-k harmful for one test point. Pass `xerr=attr.scores_std_[i]` (Banzhaf/Bootstrap) to draw Monte-Carlo error bars. |
 | `plot_self_influence(self_inf, errors=None)` | Find suspect / mislabeled samples. Histogram when `errors=None`, scatter against errors otherwise. |
 | `plot_by_group(scores, groups, style='bar'|'box'|'violin')` | Audit influence by data source / subgroup. |
-| `plot_heatmap(scores, top_k=25, cluster=False)` | Inspect the influence matrix. Top-k restriction keeps the figure readable as `n_train` grows. |
+| `plot_heatmap(scores, top_k=25)` | Inspect the influence matrix. Top-k restriction keeps the figure readable as `n_train` grows. |
 | `plot_method_comparison(s1, s2)` | Sanity-check two attributors against each other. Shows Pearson/Spearman + best-fit slope. |
 | `plot_removal_curve(curve)` | Validate scores by retraining: compare loss-after-removal to a random baseline. Pair with the `removal_curve(attr, ...)` util. |
-| `plot_top_k_stability(replicate_scores, k=10)` | Check rank-stability across bootstrap / resampling replicates. |
+| `plot_disparity_curve(curve)` | Fairness repair curve from `fairness.disparity_removal_curve`: disparity vs fraction removed, against a random baseline. |
+| `plot_detection_curve(self_inf, is_corrupted)` | Injection experiments: cumulative recall of known corruptions vs inspection budget, ranked by \|self-influence\|. |
+| `plot_influence_concentration(scores)` | "How many points carry the signal?" Lorenz-style cumulative share of \|influence\| mass. |
+| `plot_top_k_stability(replicate_scores, k=10)` | Check rank-stability across resampling replicates. Pair with the `stability_replicates(attr, ...)` util. |
 | `report(attr, X_test, y_test, ...)` | Four-panel diagnostic dashboard in one call. |
 
 See [`examples/showcase.ipynb`](examples/showcase.ipynb) for an end-to-end walkthrough.
 
+![Diagnostic report dashboard](docs/images/report.png)
+
+![Removal curve and detection curve](docs/images/validation_curves.png)
+
 ## Limitations and failure modes (explicit)
 
+- **Label encodings**: any binary encoding works ({0,1}, {-1,+1}, {1,2}, strings) — scores are computed against the model's `classes_`, and labels outside `classes_` raise a `ValueError` rather than being silently mapped. Fairness metrics (`eopp`, `fpr`) condition on the model's positive class (`classes_[1]`).
+- **Weighted objectives (influence functions)**:
+  - Models fit with `class_weight` are **rejected** by `InfluenceFunctions` (the closed form assumes an unweighted objective; using it anyway silently degrades accuracy). `influence(method='auto')` falls back to a refit-based method, which honors `class_weight` by cloning the estimator.
+  - Models fit with a `sample_weight` argument **cannot be detected post-hoc**; do not use `InfluenceFunctions` on them. Refit-based methods also refit *without* sample weights, so weighted fits are best avoided altogether or handled with a custom workflow.
+- **Penalties (influence functions)**: `penalty='l1'` / `'elasticnet'` logistic models are rejected (an l1 penalty contributes no curvature, so the l2 Hessian correction is wrong); `method='auto'` falls back. `solver='liblinear'` regularizes the intercept and triggers a warning (small O(1/(Cn)) bias); prefer `lbfgs`.
+- **Unsupported inputs** fail fast with clear errors: sparse matrices (densify first), multi-output `y`, multiclass classifiers (for `InfluenceFunctions`, and for refit-based methods when the classifier lacks `predict_proba`), wrapped estimators (`Pipeline`, `GridSearchCV` — pass the fitted inner estimator instead).
 - **Classifier loss semantics**:
   - If a classifier exposes `predict_proba`, loss mode uses negative log-likelihood of the true class.
   - If it does not, loss mode falls back to squared error on `decision_function` values (with a warning). In that case, magnitudes are not comparable to NLL-based losses.
@@ -285,9 +306,10 @@ See [`examples/showcase.ipynb`](examples/showcase.ipynb) for an end-to-end walkt
 - **Numerical conditioning (influence functions)**:
   - Influence-function estimates require Hessian inversion; ill-conditioned problems can yield unstable estimates and warnings. `damping` and/or stronger regularization can improve stability.
   - Near-separable logistic regression can yield extreme probabilities and unstable Hessians; the implementation warns in this regime.
-- **Compute**:
-  - `LOOInfluence` and `BanzhafInfluence` require repeated refits; they can be infeasible for large $n$ or expensive estimators.
-  - `BootstrapInfluence` trades bias/variance via $B$; small $B$ can yield noisy or NaN scores for some points.
+- **Compute and memory**:
+  - `LOOInfluence` and `BanzhafInfluence` require repeated refits; they can be infeasible for large $n$ or expensive estimators. `LOOInfluence.fit` additionally keeps all $n$ refitted models in memory so repeated `explain` calls are cheap.
+  - `BanzhafInfluence.fit` is cheap and the full Monte-Carlo refit cost is paid on **every** `explain` call (the subset models depend on nothing `fit` could cache at acceptable memory cost) — explain all test points in one call.
+  - `BootstrapInfluence` trades bias/variance via $B$; small $B$ can yield noisy or NaN scores for some points. `BanzhafInfluence` and `BootstrapInfluence` expose per-score Monte-Carlo standard errors in `scores_std_` after `explain`.
 
 ## References (selected)
 

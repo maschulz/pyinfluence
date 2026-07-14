@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyinfluence"
-version = "0.1.0"
+version = "0.2.0"
 description = "Training data attribution for scikit-learn models"
 readme = "README.md"
 license = {text = "MIT"}
@@ -34,12 +34,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-viz = ["matplotlib>=3.5"]
+# matplotlib >= 3.9 is required (boxplot(tick_labels=...))
+viz = ["matplotlib>=3.9"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.1.0",
-    "matplotlib>=3.5",
+    "matplotlib>=3.9",
 ]
 
 [project.urls]

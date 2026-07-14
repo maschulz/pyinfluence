@@ -13,7 +13,6 @@ otherwise the removal effect is confounded with a regularization shift.
 
 import numpy as np
 import pytest
-from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression, Ridge
 
 from pyinfluence import InfluenceFunctions

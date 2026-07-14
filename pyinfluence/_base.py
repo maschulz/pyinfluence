@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 import numpy as np
+import scipy.sparse
 from numpy.typing import ArrayLike, NDArray
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
@@ -98,11 +99,33 @@ def _validate_mode(mode: str) -> None:
         )
 
 
+def _reject_sparse(X, name: str) -> None:
+    """Raise a clear TypeError for scipy sparse inputs.
+
+    np.asarray on a sparse matrix produces a 0-d object array, which would
+    otherwise surface much later as a cryptic IndexError.
+    """
+    if scipy.sparse.issparse(X):
+        raise TypeError(
+            f"{name} is a scipy sparse matrix, which is not supported. "
+            f"Densify first with {name}.toarray() (or .todense())."
+        )
+
+
 def _prepare_fit_inputs(X: ArrayLike, y: ArrayLike) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
-    """Convert X and y to numpy arrays; y is raveled. For use in fit()."""
+    """Convert X and y to numpy arrays; y is raveled. For use in fit().
+
+    Rejects sparse X and multi-output y with clear errors.
+    """
+    _reject_sparse(X, "X")
     X = np.asarray(X)
-    y = np.asarray(y).ravel()
-    return X, y
+    y = np.asarray(y)
+    if y.ndim == 2 and y.shape[1] > 1:
+        raise ValueError(
+            f"Multi-output y (shape {y.shape}) is not supported. "
+            "Fit one model per output and attribute each separately."
+        )
+    return X, y.ravel()
 
 
 def _prepare_explain_inputs(
@@ -131,6 +154,7 @@ def _prepare_explain_inputs(
     X_test : ndarray of shape (m_samples, n_features)
     y_test : ndarray of shape (m_samples,) or None
     """
+    _reject_sparse(X_test, "X_test")
     X_test = np.asarray(X_test)
     if X_test.ndim == 1:
         X_test = X_test.reshape(1, -1)

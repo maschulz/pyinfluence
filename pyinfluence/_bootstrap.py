@@ -19,6 +19,7 @@ from pyinfluence._base import (
     check_is_fitted,
 )
 from pyinfluence._utils import _value_at_test, tqdm_joblib
+from pyinfluence._validation import validate_refit_model
 
 if TYPE_CHECKING:
     from typing import Self
@@ -133,6 +134,12 @@ class BootstrapInfluence(BaseAttributor):
         in_bag_indices_[b] = indices of training samples in bag for run b.
     failed_estimator_indices_ : list of int
         Indices b where bootstrap fit failed.
+    scores_std_ : ndarray of shape (n_test, n_train)
+        Standard error of the most recent ``explain`` call's scores,
+        combining the OOB and in-bag run variances
+        (sqrt(var_oob/n_oob + var_in/n_in)). NaN where either side has
+        fewer than two runs. Use to judge whether a ranking is signal or
+        resampling noise.
 
     Examples
     --------
@@ -177,6 +184,7 @@ class BootstrapInfluence(BaseAttributor):
         self
         """
         _validate_mode(self.mode)
+        validate_refit_model(model)
         X, y = _prepare_fit_inputs(X, y)
         n_train = X.shape[0]
         self.model_ = model
@@ -239,7 +247,9 @@ class BootstrapInfluence(BaseAttributor):
         -------
         scores : ndarray of shape (m_samples, n_train)
             scores[i, j] = influence of training sample j on test sample i.
-            Positive = helpful. May contain NaN for training points with no OOB runs.
+            Positive = helpful. May contain NaN for training points with no
+            OOB (or no in-bag) runs; both cases warn. The standard error is
+            stored in ``scores_std_``.
         """
         check_is_fitted(self, ["model_", "bootstrap_models_"])
         needs_y_test = self.mode == "loss" or (
@@ -278,33 +288,101 @@ class BootstrapInfluence(BaseAttributor):
 
         # For each training point i: average over b where i is OOB, then subtract baseline
         scores = np.full((n_test, n_train), np.nan)
+        scores_std = np.full((n_test, n_train), np.nan)
         valid_b_set = set(valid_b)
+        n_no_oob = 0
+        n_no_in_bag = 0
         for i in range(n_train):
             oob_b_valid = [b for b in range(B) if oob_mask[i, b] and b in valid_b_set]
-            if len(oob_b_valid) == 0:
-                continue
-            vals = np.mean(values_per_b[:, oob_b_valid], axis=1)
             in_bag_b_valid = [
                 b for b in range(B) if in_bag_mask[i, b] and b in valid_b_set
             ]
-            if len(in_bag_b_valid) == 0:
+            if len(oob_b_valid) == 0:
+                n_no_oob += 1
                 continue
+            if len(in_bag_b_valid) == 0:
+                n_no_in_bag += 1
+                continue
+            vals = np.mean(values_per_b[:, oob_b_valid], axis=1)
             baseline_i = np.mean(values_per_b[:, in_bag_b_valid], axis=1)
             if self.mode == "loss":
                 scores[:, i] = vals - baseline_i
             else:
                 scores[:, i] = baseline_i - vals
+            if len(oob_b_valid) >= 2 and len(in_bag_b_valid) >= 2:
+                var_oob = np.var(values_per_b[:, oob_b_valid], axis=1, ddof=1)
+                var_in = np.var(values_per_b[:, in_bag_b_valid], axis=1, ddof=1)
+                scores_std[:, i] = np.sqrt(
+                    var_oob / len(oob_b_valid) + var_in / len(in_bag_b_valid)
+                )
 
-        # Warn for points with very few OOB runs (and at least one)
+        # Warn once for every degraded case: NaN (no OOB / no in-bag runs)
+        # and few-OOB points. A point that is in-bag in every run is the most
+        # extreme dropout and must not be the one silent case.
         n_oob_per_i = np.sum(oob_mask[:, valid_b], axis=1)
         few_oob = int(
             np.sum((n_oob_per_i > 0) & (n_oob_per_i < self.min_oob_runs))
         )
+        issues = []
+        if n_no_oob > 0:
+            issues.append(
+                f"{n_no_oob} training point(s) were in-bag in every "
+                "successful run (no OOB runs; scores are NaN)"
+            )
+        if n_no_in_bag > 0:
+            issues.append(
+                f"{n_no_in_bag} training point(s) were OOB in every "
+                "successful run (no in-bag runs; scores are NaN)"
+            )
         if few_oob > 0:
-            warnings.warn(
+            issues.append(
                 f"{few_oob} training point(s) have fewer than "
-                f"{self.min_oob_runs} OOB runs; scores use available runs.",
+                f"{self.min_oob_runs} OOB runs (scores use available runs)"
+            )
+        if issues:
+            warnings.warn(
+                "BootstrapInfluence: " + "; ".join(issues)
+                + ". Increase n_estimators for more reliable estimates.",
                 UserWarning,
             )
+        self.scores_std_ = scores_std
 
         return scores
+
+    def _self_influence_diag(self) -> NDArray[np.floating]:
+        """
+        Diagonal of the train-vs-train influence matrix in O(n x B) memory.
+
+        Evaluates each bootstrap model once on the full training set and
+        combines only the diagonal entries, instead of the (n_train, n_train)
+        matrix that ``explain(X_train, y_train)`` would build. Used by
+        ``pyinfluence.self_influence``.
+        """
+        check_is_fitted(self, ["model_", "bootstrap_models_"])
+        X, y = self.X_train_, self.y_train_
+        n_train = X.shape[0]
+        B = self.n_estimators
+        valid_b = [b for b in range(B) if self.bootstrap_models_[b] is not None]
+        if not valid_b:
+            return np.full(n_train, np.nan)
+
+        values_per_b = np.full((n_train, B), np.nan)
+        for b in valid_b:
+            values_per_b[:, b] = _value_at_test(
+                self.bootstrap_models_[b], X, y, self.mode, self.is_classifier_
+            )
+        oob_mask = np.ones((n_train, B), dtype=bool)
+        for b in range(B):
+            oob_mask[self.in_bag_indices_[b], b] = False
+
+        diag = np.full(n_train, np.nan)
+        valid_b_set = set(valid_b)
+        for i in range(n_train):
+            ob = [b for b in valid_b_set if oob_mask[i, b]]
+            ib = [b for b in valid_b_set if not oob_mask[i, b]]
+            if not ob or not ib:
+                continue
+            v = values_per_b[i, ob].mean()
+            base = values_per_b[i, ib].mean()
+            diag[i] = v - base if self.mode == "loss" else base - v
+        return diag

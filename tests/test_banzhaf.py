@@ -1,15 +1,18 @@
 """Tests for Data Banzhaf influence (method-specific only).
 
 Universal contract and sign convention live in test_attributor_contract.py.
-Here: Analytical, Convergence, NullPlayer, Symmetry, Parallel.
+Here: Analytical, Convergence, NullPlayer, Symmetry, Parallel, NaN handling,
+scores_std_, and unbiasedness vs brute-force enumeration.
 """
+
+import itertools
 
 import numpy as np
 import pytest
+from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression, Ridge
 
 from pyinfluence import BanzhafInfluence
-from tests.helpers import assert_influence_scores_valid
 
 
 @pytest.mark.slow
@@ -328,3 +331,115 @@ class TestBanzhafParallel:
         scores_par = banzhaf_par.explain(X_test, y_test)
 
         np.testing.assert_allclose(scores_seq, scores_par, rtol=1e-10)
+
+
+class TestBanzhafUnmeasurableNaN:
+    """A training point whose subset refits *all* fail gets NaN, not 0.0."""
+
+    def test_sole_minority_class_sample_is_nan_with_warning(self):
+        """12-sample binary set with exactly one minority-class sample.
+
+        Every subset not containing index 0 is single-class, so every
+        with/without pair fails to fit; the point's value is unmeasurable
+        (NaN + warning), not silently 0.0.
+        """
+        rng = np.random.default_rng(0)
+        X = rng.normal(size=(12, 3))
+        y = np.zeros(12, dtype=int)
+        y[0] = 1  # sole minority-class sample
+
+        model = LogisticRegression(max_iter=1000).fit(X, y)
+        X_test = rng.normal(size=(2, 3))
+        y_test = np.array([0, 1])
+
+        attr = BanzhafInfluence(mode="loss", n_samples=50, random_state=0, verbose=0)
+        attr.fit(model, X, y)
+        with pytest.warns(UserWarning, match="NaN"):
+            scores = attr.explain(X_test, y_test)
+
+        assert np.isnan(scores[:, 0]).all()
+        assert np.isfinite(scores[:, 1:]).all()
+
+
+class TestBanzhafScoresStd:
+    """attr.scores_std_ after explain()."""
+
+    def test_shape_and_finite_for_ridge_regression(self, small_fitted_ridge):
+        model, X_train, y_train, X_test, y_test = small_fitted_ridge
+        attr = BanzhafInfluence(mode="loss", n_samples=30, random_state=0, verbose=0)
+        attr.fit(model, X_train, y_train)
+        scores = attr.explain(X_test, y_test)
+
+        assert hasattr(attr, "scores_std_")
+        assert attr.scores_std_.shape == scores.shape
+        assert np.all(np.isfinite(attr.scores_std_[np.isfinite(scores)]))
+
+    def test_all_nan_column_matches_nan_scores(self):
+        rng = np.random.default_rng(0)
+        X = rng.normal(size=(12, 3))
+        y = np.zeros(12, dtype=int)
+        y[0] = 1  # sole minority-class sample -> unmeasurable
+
+        model = LogisticRegression(max_iter=1000).fit(X, y)
+        X_test = rng.normal(size=(2, 3))
+        y_test = np.array([0, 1])
+
+        attr = BanzhafInfluence(mode="loss", n_samples=50, random_state=0, verbose=0)
+        attr.fit(model, X, y)
+        with pytest.warns(UserWarning, match="NaN"):
+            scores = attr.explain(X_test, y_test)
+
+        assert attr.scores_std_.shape == scores.shape
+        np.testing.assert_array_equal(
+            np.isnan(attr.scores_std_[:, 0]), np.isnan(scores[:, 0])
+        )
+
+
+@pytest.mark.slow
+class TestBanzhafUnbiasedness:
+    """BanzhafInfluence must match the exact mean marginal contribution
+    (averaged over non-empty subsets only, matching the implementation's
+    a-priori exclusion of the empty subset) within a loose tolerance.
+
+    Before the size < 2 subset filter was removed, this failed by ~37%.
+    """
+
+    def test_matches_brute_force_enumeration_n4(self):
+        X_train = np.array([[0.0], [1.0], [2.0], [3.0]])
+        y_train = np.array([0.0, 1.0, 2.0, 100.0])  # index 3 is an outlier
+        X_test = np.array([[1.5]])
+        y_test = np.array([1.5])
+
+        model = Ridge(alpha=1.0).fit(X_train, y_train)
+
+        def loss(m, Xt, yt):
+            return (yt - m.predict(Xt)) ** 2
+
+        n = 4
+        exact = np.empty(n)
+        for idx in range(n):
+            others = [i for i in range(n) if i != idx]
+            total, count = 0.0, 0
+            for r in range(1, len(others) + 1):
+                for combo in itertools.combinations(others, r):
+                    subset = list(combo)
+                    m_without = clone(model).fit(X_train[subset], y_train[subset])
+                    m_with = clone(model).fit(
+                        X_train[subset + [idx]], y_train[subset + [idx]]
+                    )
+                    loss_without = loss(m_without, X_test, y_test)[0]
+                    loss_with = loss(m_with, X_test, y_test)[0]
+                    total += loss_without - loss_with
+                    count += 1
+            exact[idx] = total / count
+
+        banzhaf = BanzhafInfluence(
+            mode="loss", n_samples=8000, random_state=0, verbose=0
+        )
+        banzhaf.fit(model, X_train, y_train)
+        scores = banzhaf.explain(X_test, y_test).ravel()
+
+        rel_err = np.abs(scores - exact) / np.abs(exact)
+        assert np.all(rel_err < 0.10), (
+            f"exact={exact}, banzhaf={scores}, rel_err={rel_err}"
+        )

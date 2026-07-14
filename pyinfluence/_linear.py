@@ -284,7 +284,10 @@ def _gradients_logistic(
     X : ndarray of shape (n_samples, n_features)
         Feature matrix (augmented with intercept if applicable).
     y : ndarray of shape (n_samples,)
-        Binary labels (0 or 1).
+        Binary labels, strictly 0/1 where 1 denotes ``model.classes_[1]``
+        (the class whose probability ``probs`` refers to). Callers must
+        binarize raw labels first; passing raw label values (e.g. {-1, +1}
+        or {1, 2}) silently produces wrong gradients.
     probs : ndarray of shape (n_samples,)
         Predicted probabilities for the positive class.
 
@@ -362,15 +365,18 @@ def _compute_kernel_matrix(
     K : ndarray of shape (n_samples_X, n_samples_Y)
         Kernel matrix.
     """
-    kernel = model.kernel
-    params = {}
-    if hasattr(model, "gamma") and model.gamma is not None:
-        params["gamma"] = model.gamma
-    if hasattr(model, "degree"):
-        params["degree"] = model.degree
-    if hasattr(model, "coef0"):
-        params["coef0"] = model.coef0
-    return pairwise_kernels(X, Y, metric=kernel, filter_params=True, **params)
+    # Mirror sklearn's KernelRidge._get_kernel: callable kernels receive only
+    # kernel_params (filter_params does not filter kwargs for callables);
+    # string kernels receive gamma/degree/coef0 with filter_params=True.
+    if callable(model.kernel):
+        params = model.kernel_params or {}
+    else:
+        params = {
+            "gamma": model.gamma,
+            "degree": model.degree,
+            "coef0": model.coef0,
+        }
+    return pairwise_kernels(X, Y, metric=model.kernel, filter_params=True, **params)
 
 
 def _get_dual_params(model: KernelRidge) -> NDArray[np.floating]:

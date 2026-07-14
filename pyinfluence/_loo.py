@@ -13,12 +13,13 @@ from tqdm import tqdm
 
 from pyinfluence._base import (
     BaseAttributor,
-    check_is_fitted,
     _prepare_explain_inputs,
     _prepare_fit_inputs,
     _validate_mode,
+    check_is_fitted,
 )
-from pyinfluence._utils import tqdm_joblib, _value_at_test
+from pyinfluence._utils import _value_at_test, tqdm_joblib
+from pyinfluence._validation import validate_refit_model
 
 if TYPE_CHECKING:
     from typing import Self
@@ -110,6 +111,14 @@ class LOOInfluence(BaseAttributor):
     >>> model = RandomForestClassifier().fit(X_train, y_train)
     >>> attr = LOOInfluence(mode='loss', n_jobs=-1).fit(model, X_train, y_train)
     >>> scores = attr.explain(X_test, y_test)
+
+    Notes
+    -----
+    ``fit`` keeps all ``n_train`` refitted models in memory so that repeated
+    ``explain`` calls are cheap. For large ``n_train`` combined with
+    memory-heavy estimators (forests, boosted ensembles, kernel models) this
+    can dominate memory use; budget roughly n_train x (size of one fitted
+    model).
     """
 
     def __init__(
@@ -125,7 +134,7 @@ class LOOInfluence(BaseAttributor):
     def fit(self, model: BaseEstimator, X: ArrayLike, y: ArrayLike) -> Self:
         """
         Fit the attributor by training LOO models.
-        
+
         Parameters
         ----------
         model : sklearn estimator
@@ -134,32 +143,33 @@ class LOOInfluence(BaseAttributor):
             Training data.
         y : array-like of shape (n_samples,)
             Training labels.
-            
+
         Returns
         -------
         self
-        
+
         """
         _validate_mode(self.mode)
+        validate_refit_model(model)
         X, y = _prepare_fit_inputs(X, y)
         self.model_ = model
         self.X_train_ = X
         self.y_train_ = y
         self.is_classifier_ = is_classifier(model)
         n_train = X.shape[0]
-        
+
         # Fit LOO models in parallel
-        iterator = range(n_train)
-        if self.verbose > 0:
-            iterator = tqdm(iterator, desc="Fitting LOO models")
         if self.n_jobs is None or self.n_jobs == 1:
+            iterator = range(n_train)
+            if self.verbose > 0:
+                iterator = tqdm(iterator, desc="Fitting LOO models")
             loo_models = [_fit_loo_model(model, X, y, i) for i in iterator]
         else:
             with tqdm_joblib(tqdm(total=n_train, desc="Fitting LOO models", disable=(self.verbose == 0))):
                 loo_models = Parallel(n_jobs=self.n_jobs)(
                     delayed(_fit_loo_model)(model, X, y, i) for i in range(n_train)
                 )
-        
+
         # Track failed refits
         self.failed_indices_ = [i for i, m in enumerate(loo_models) if m is None]
         if self.failed_indices_:
@@ -170,7 +180,7 @@ class LOOInfluence(BaseAttributor):
                 "Influence scores for these samples will be NaN.",
                 UserWarning
             )
-        
+
         self.loo_models_ = loo_models
 
         return self
@@ -246,3 +256,26 @@ class LOOInfluence(BaseAttributor):
                 scores[:, j] = baseline - loo_value
 
         return scores
+
+    def _self_influence_diag(self) -> NDArray[np.floating]:
+        """
+        Diagonal of the train-vs-train influence matrix in O(n) evaluations.
+
+        Each LOO model is evaluated only at its own held-out training point,
+        instead of the O(n^2) evaluations (and n x n memory) that
+        ``explain(X_train, y_train)`` would need. Used by
+        ``pyinfluence.self_influence``.
+        """
+        check_is_fitted(self, ["model_", "loo_models_"])
+        X, y = self.X_train_, self.y_train_
+        n_train = X.shape[0]
+        baseline = _value_at_test(self.model_, X, y, self.mode, self.is_classifier_)
+        diag = np.full(n_train, np.nan)
+        for j, loo_model in enumerate(self.loo_models_):
+            if loo_model is None:
+                continue
+            v = _value_at_test(
+                loo_model, X[j : j + 1], y[j : j + 1], self.mode, self.is_classifier_
+            )[0]
+            diag[j] = v - baseline[j] if self.mode == "loss" else baseline[j] - v
+        return diag

@@ -29,11 +29,15 @@ Each section answers one question:
 | Question | Figure |
 |---|---|
 | Which training samples look mislabeled? | `plot_self_influence` |
+| Would the ranking actually find corruptions? | `plot_detection_curve` |
 | Why did the model predict *this* for *that* test point? | `plot_top_influencers` |
 | Are the influence scores actually meaningful? | `plot_removal_curve` |
 | Are some subgroups systematically harmful? | `plot_by_group` |
 | Do two methods agree? | `plot_method_comparison` |
+| Is a noisy estimator's ranking signal or noise? | `plot_top_influencers(xerr=...)` |
 | Is the ranking stable under resampling? | `plot_top_k_stability` |
+| How concentrated is the influence mass? | `plot_influence_concentration` |
+| Which training points drive a fairness gap? | `plot_disparity_curve` |
 | What does this all look like at a glance? | `report` |
 
 We use a synthetic regression problem so the **ground truth** of which samples
@@ -57,6 +61,7 @@ from pyinfluence import (
     influence,
     removal_curve,
     self_influence,
+    stability_replicates,
 )
 from pyinfluence import viz
 
@@ -146,6 +151,26 @@ much stronger candidate than one with high self-influence alone."""),
 
     ("code", r"""train_err = np.abs(model.predict(X_train) - y_train)
 fig, _ = viz.plot_self_influence(self_inf, errors=train_err, annotate=True)
+plt.show()
+"""),
+
+    ("md", r"""Because we *know* the corrupted rows here, we can validate the ranking
+itself with a **detection curve**: inspect samples in order of decreasing
+|self-influence| and count how many true corruptions each inspection budget
+finds. This is the figure to produce (via a small injection experiment) before
+trusting `find_mislabeled` on data where the ground truth is unknown.
+
+Two honesty notes. First, the corruption in this demo is deliberately gross
+(labels shifted by ±8–12σ), so the curve below is an *upper bound* —
+plausible errors on records the model already finds ambiguous are far harder
+to detect, for self-influence and for every other detector. Second,
+self-influence reads *atypicality*: plain per-sample training error is an
+equally strong baseline for label errors, and corrupted *features* leave a
+different trace entirely. Inject the kind of errors you actually expect."""),
+
+    ("code", r"""is_corrupted = np.zeros(n_train, dtype=bool)
+is_corrupted[corrupted] = True
+fig, _ = viz.plot_detection_curve(self_inf, is_corrupted)
 plt.show()
 """),
 
@@ -254,30 +279,42 @@ fig, _ = viz.plot_method_comparison(s_if, s_loo, names=('InfluenceFunctions', 'L
 plt.show()
 """),
 
-    ("md", r"""## 8. Is the ranking stable? `plot_top_k_stability`
+    ("md", r"""## 8. Signal or noise? Error bars on Monte-Carlo estimators
+
+`BootstrapInfluence` (and `BanzhafInfluence`) are Monte-Carlo estimators:
+their scores come with sampling noise. After `explain`, both expose the
+per-score standard error in `scores_std_`, and `plot_top_influencers`
+accepts it as `xerr=`. A bar whose error bar crosses zero is a ranking you
+should not over-interpret."""),
+
+    ("code", r"""attr_bs = BootstrapInfluence(mode='loss', n_estimators=80, random_state=0, verbose=0)
+attr_bs.fit(model, X_train, y_train)
+scores_bs = attr_bs.explain(X_test, y_test)
+
+fig, _ = viz.plot_top_influencers(
+    scores_bs, test_idx=worst_test, k=8, xerr=attr_bs.scores_std_[worst_test],
+)
+plt.show()
+"""),
+
+    ("md", r"""## 9. Is the ranking stable? `plot_top_k_stability`
 
 For noisy estimators (or as a robustness check) we rerun the attributor on
 *resampled* training sets and ask: how often does each sample appear in the
-top-`k`?
+top-`k`? The `stability_replicates` utility does the resample-refit-rescore
+loop and maps scores back to the original training indices.
 
 A sample that shows up in 10 of 12 replicates is a much more credible
 "important point" than one that only sneaks in once."""),
 
-    ("code", r"""n_rep = 12
-reps = np.zeros((n_rep, n_train))
-for r in range(n_rep):
-    boot = np.random.default_rng(100 + r).choice(n_train, size=n_train, replace=True)
-    m_r  = Ridge(alpha=1.0).fit(X_train[boot], y_train[boot])
-    a_r  = InfluenceFunctions(mode='loss', damping=1e-3).fit(m_r, X_train[boot], y_train[boot])
-    s_r  = a_r.explain(X_test[:15], y_test[:15]).sum(axis=0)
-    # Map back to original indices (with duplicates summing).
-    np.add.at(reps[r], boot, s_r)
+    ("code", r"""reps = stability_replicates(attr, X_test[:15], y_test[:15],
+                            n_replicates=12, random_state=100)
 
 fig, _ = viz.plot_top_k_stability(reps, k=10, show='abs', max_show=20)
 plt.show()
 """),
 
-    ("md", r"""## 9. Cross-sample structure: `plot_heatmap`
+    ("md", r"""## 10. Cross-sample structure: `plot_heatmap`
 
 For small problems the full influence matrix is worth a look. By default
 the heatmap is restricted to the rows/columns carrying the most influence
@@ -287,15 +324,18 @@ mass so it remains readable as `n_train` grows."""),
 plt.show()
 """),
 
-    ("md", r"""Co-clustering reorders the heatmap into coherent blocks — useful when you
-suspect there are sub-populations of test points sharing the same supporting
-training samples."""),
+    ("md", r"""## 11. How concentrated is the influence? `plot_influence_concentration`
 
-    ("code", r"""fig, _ = viz.plot_heatmap(scores, top_k=20, cluster=True)
+Before deciding how many samples to inspect, it helps to know whether the
+influence mass is spread evenly or carried by a handful of points. The
+Lorenz-style concentration curve answers exactly that — here the corrupted
+rows make the curve hug the top-left."""),
+
+    ("code", r"""fig, _ = viz.plot_influence_concentration(scores)
 plt.show()
 """),
 
-    ("md", r"""## 10. Working with named samples
+    ("md", r"""## 12. Working with named samples
 
 In real data, training samples have names — `patient_03A`, `cmpd_X1Y2`,
 `batch_2024_07_11`. Every plot that shows per-sample tick labels accepts a
@@ -317,7 +357,7 @@ fig, _ = viz.plot_heatmap(
 plt.show()
 """),
 
-    ("md", r"""## 11. One-liner overview: `report`
+    ("md", r"""## 13. One-liner overview: `report`
 
 `viz.report(attr, X_test, y_test, ...)` packs the four most useful panels
 into a single figure. With `train_labels=` / `test_labels=`, the dashboard
@@ -332,7 +372,7 @@ is self-documenting against your real sample IDs."""),
 plt.show()
 """),
 
-    ("md", r"""## 12. Real data: breast-cancer classification
+    ("md", r"""## 14. Real data: breast-cancer classification
 
 To check that the same diagnostic story works on a real dataset, we fit a
 `LogisticRegression` on `sklearn.datasets.load_breast_cancer` after
@@ -362,6 +402,34 @@ plt.show()
 flagged_b = find_mislabeled(attr_b)
 hit_b = set(flagged_b) & set(flip)
 print(f'flipped labels recovered by find_mislabeled: {len(hit_b)} / {len(flip)}')
+"""),
+
+    ("md", r"""## 15. Fairness: which training points drive a disparity?
+
+`pyinfluence.fairness` attributes *group-disparity* functionals (demographic
+parity, equal-opportunity/FPR gaps, worst-group loss) to training examples:
+`scores[j] ≈ F(D \ z_j) − F(D)` on a fixed audit set. The repair curve below
+removes the most disparity-driving points, refits, and tracks the gap —
+against a random-removal baseline.
+
+We reuse the breast-cancer classifier and treat a median split on one input
+feature ("mean texture") as a stand-in sensitive attribute."""),
+
+    ("code", r"""from pyinfluence.fairness import FairnessInfluenceFunctions, disparity_removal_curve
+
+a_audit = (Xb_te[:, 1] > np.median(Xb_te[:, 1])).astype(int)  # synthetic sensitive attr
+
+fattr = FairnessInfluenceFunctions(metric='dp', target='absolute')
+fattr.fit(clf, Xb_tr_s, yb_tr_noisy)
+f_scores = fattr.explain(Xb_te_s, sensitive_audit=a_audit)
+
+fcurve = disparity_removal_curve(
+    f_scores, clf, Xb_tr_s, yb_tr_noisy, Xb_te_s, a_audit, y_audit=yb_te,
+    fractions=np.linspace(0.0, 0.15, 6), n_random=3, random_state=0,
+)
+fig, _ = viz.plot_disparity_curve(fcurve)
+plt.show()
+print(f"accuracy along the curve: {np.round(fcurve['accuracy'], 3)}")
 """),
 
     ("md", r"""## Where to go next

@@ -1,24 +1,30 @@
 """Plotting helpers for influence analysis.
 
-Eight thin functions plus a multi-panel ``report`` wrapper. Each plotting
+Thin plotting functions plus a multi-panel ``report`` wrapper. Each plotting
 function takes pre-computed arrays (not an attributor), returns
 ``(fig, ax)``, accepts an optional ``ax=`` to draw on, and never colours
 points by sign unless the sign carries meaning for the figure (top-k
 explanation and the heatmap).
 
-Matplotlib is an optional dependency; importing this module without it
-raises a clear error from the first plotting call.
+Matplotlib is an optional dependency (requires matplotlib >= 3.9); importing
+this module without it raises a clear error from the first plotting call.
+
+NaN scores (failed refits in LOO/Bootstrap/Banzhaf) are excluded from
+rankings, matching the policy of the analysis utilities.
 
 Functions
 ---------
-- plot_top_influencers       : per-instance explanation (top helpful/harmful)
-- plot_self_influence        : mislabel-detector view (histogram or vs-error)
-- plot_by_group              : aggregate influence by group (bar/box/violin)
-- plot_heatmap               : top-k subset of the influence matrix
-- plot_method_comparison     : scatter of two attributors' scores
-- plot_removal_curve         : loss-after-removal validation curve
-- plot_top_k_stability       : top-k membership across replicates
-- report                     : 2x2 diagnostic dashboard
+- plot_top_influencers        : per-instance explanation (top helpful/harmful)
+- plot_self_influence         : mislabel-detector view (histogram or vs-error)
+- plot_by_group               : aggregate influence by group (bar/box/violin)
+- plot_heatmap                : top-k subset of the influence matrix
+- plot_method_comparison      : scatter of two attributors' scores
+- plot_removal_curve          : loss-after-removal validation curve
+- plot_disparity_curve        : fairness repair curve (disparity_removal_curve)
+- plot_detection_curve        : mislabel-detection recall vs inspection budget
+- plot_influence_concentration: Lorenz-style influence-mass concentration
+- plot_top_k_stability        : top-k membership across replicates
+- report                      : 2x2 diagnostic dashboard
 """
 
 from __future__ import annotations
@@ -107,6 +113,7 @@ def plot_top_influencers(
     test_idx: int = 0,
     k: int = 10,
     labels: ArrayLike | None = None,
+    xerr: ArrayLike | None = None,
     ax: Axes | None = None,
     title: str | None = None,
 ) -> tuple[Figure, Axes]:
@@ -118,6 +125,7 @@ def plot_top_influencers(
     ----------
     scores : array-like, shape (n_test, n_train) or (n_train,)
         Influence scores. A 1D vector is treated as a single test point.
+        NaN scores (failed refits) are excluded from the ranking.
     test_idx : int, default=0
         Which row of ``scores`` to explain. Ignored when ``scores`` is 1D.
     k : int, default=10
@@ -126,6 +134,11 @@ def plot_top_influencers(
     labels : array-like, optional
         Per-training-sample labels for the y-axis. Accepts a list, ndarray,
         or pandas Index/Series. Default: integer indices.
+    xerr : array-like, optional
+        Per-score standard errors, same shape as ``scores`` (or (n_train,)
+        matching a 1D ``scores``). Drawn as error bars — pass
+        ``attr.scores_std_`` from BanzhafInfluence / BootstrapInfluence to
+        show whether the ranking is signal or Monte Carlo noise.
     ax : matplotlib Axes, optional
     title : str, optional
 
@@ -133,17 +146,27 @@ def plot_top_influencers(
     -------
     fig, ax
     """
-    s_all = np.asarray(scores)
+    s_all = np.asarray(scores, dtype=float)
     if s_all.ndim == 1:
         row = s_all
+        err_row = None if xerr is None else np.asarray(xerr, dtype=float).ravel()
     elif s_all.ndim == 2:
         row = s_all[test_idx]
+        if xerr is None:
+            err_row = None
+        else:
+            e = np.asarray(xerr, dtype=float)
+            err_row = e[test_idx] if e.ndim == 2 else e.ravel()
     else:
         raise ValueError("scores must be 1D or 2D")
+    if err_row is not None and err_row.size != row.size:
+        raise ValueError("xerr must match scores in shape")
 
     n_train = row.size
-    k_eff = min(k, n_train // 2 if n_train >= 2 else n_train)
-    order = np.argsort(row)            # ascending (most harmful first)
+    # NaN scores can't be ranked; reversed argsort would put them on top.
+    valid = np.where(~np.isnan(row))[0]
+    k_eff = min(k, valid.size // 2 if valid.size >= 2 else valid.size)
+    order = valid[np.argsort(row[valid])]  # ascending (most harmful first)
     # Strict signed-value ranking top -> bottom: most helpful first, then
     # decreasing through 0 to most harmful at the bottom.
     helpful_desc = order[-k_eff:][::-1]   # [most_pos, ..., k-th_pos]
@@ -159,7 +182,11 @@ def plot_top_influencers(
 
     fig, ax = _ax_or_new(ax, figsize=(6, max(3, 0.3 * len(idx))))
     y = np.arange(len(idx))
-    ax.barh(y, vals, color=colors)
+    ax.barh(
+        y, vals, color=colors,
+        xerr=None if err_row is None else err_row[idx],
+        error_kw={"ecolor": "black", "elinewidth": 0.8, "capsize": 2},
+    )
     ax.set_yticks(y)
     ax.set_yticklabels(tick)
     ax.invert_yaxis()  # helpful on top
@@ -361,7 +388,6 @@ def plot_by_group(
 def plot_heatmap(
     scores: ArrayLike,
     top_k: int | None = 25,
-    cluster: bool = False,
     train_labels: ArrayLike | None = None,
     test_labels: ArrayLike | None = None,
     cmap: str = "RdBu",
@@ -379,9 +405,6 @@ def plot_heatmap(
     top_k : int or None, default=25
         Keep the ``top_k`` rows (by max |influence|) and ``top_k`` columns
         (by sum |influence|). Pass ``None`` to show all rows and columns.
-    cluster : bool, default=False
-        If True, reorder rows and columns by ``SpectralCoclustering`` so
-        coherent blocks line up. Requires scikit-learn.
     train_labels : array-like, optional
         Length-n_train labels used on the x-axis (training samples). List,
         ndarray, or pandas Index/Series. Default: integer indices.
@@ -398,7 +421,7 @@ def plot_heatmap(
     -------
     fig, ax
     """
-    plt = _require_mpl()
+    _require_mpl()
     s = np.asarray(scores)
     if s.ndim == 1:
         s = s.reshape(1, -1)
@@ -419,20 +442,6 @@ def plot_heatmap(
             col_keep = np.argsort(np.abs(s).sum(axis=0))[::-1][:top_k]
             col_keep.sort()
     s = s[np.ix_(row_keep, col_keep)]
-
-    if cluster and s.shape[0] > 1 and s.shape[1] > 1:
-        try:
-            from sklearn.cluster import SpectralCoclustering
-            n_clusters = max(2, min(min(s.shape), int(np.sqrt(s.size) / 2)))
-            model = SpectralCoclustering(n_clusters=n_clusters, random_state=0)
-            model.fit(s - s.mean())
-            r_ord = np.argsort(model.row_labels_)
-            c_ord = np.argsort(model.column_labels_)
-            s = s[np.ix_(r_ord, c_ord)]
-            row_keep = row_keep[r_ord]
-            col_keep = col_keep[c_ord]
-        except ImportError:
-            pass
 
     fig, ax = _ax_or_new(ax, figsize=(8, 5))
     vmax = float(np.abs(s).max()) if s.size else 1.0
@@ -614,7 +623,226 @@ def plot_removal_curve(
 
 
 # -----------------------------------------------------------------------------
-# 7. Top-k stability across replicates
+# 7. Fairness repair curve
+# -----------------------------------------------------------------------------
+
+
+def plot_disparity_curve(
+    curve: dict,
+    show_hard: bool = True,
+    ax: Axes | None = None,
+    title: str | None = None,
+) -> tuple[Figure, Axes]:
+    """
+    Plot a fairness repair curve from ``fairness.disparity_removal_curve``.
+
+    Shows the audit-set disparity as a function of the fraction of training
+    points removed (most disparity-driving first), against the random-removal
+    baseline and the full-model disparity.
+
+    Accuracy is intentionally not drawn on a second axis; read it from
+    ``curve['accuracy']`` if you need the fairness/accuracy trade-off.
+
+    Parameters
+    ----------
+    curve : dict
+        Result of ``disparity_removal_curve(...)``. Required keys:
+        ``fractions``, ``disparity``, ``base_disparity``; optional:
+        ``disparity_hard``, ``random_disparity_mean``,
+        ``random_disparity_std``.
+    show_hard : bool, default=True
+        Also draw the thresholded-decision disparity when present (NaN for
+        regressors, in which case it is skipped).
+    ax : matplotlib Axes, optional
+    title : str, optional
+
+    Returns
+    -------
+    fig, ax
+    """
+    fig, ax = _ax_or_new(ax)
+    f = np.asarray(curve["fractions"])
+    disp = np.asarray(curve["disparity"])
+
+    ax.plot(f, disp, color=_HELPFUL, marker="o", linewidth=1.8,
+            label="smoothed disparity (by influence)")
+
+    hard = np.asarray(curve.get("disparity_hard", []))
+    if show_hard and hard.size and not np.isnan(hard).all():
+        ax.plot(f, hard, color=_HELPFUL, marker="s", linewidth=1.2,
+                linestyle=":", alpha=0.8, label="hard-decision disparity")
+
+    rmean = np.asarray(curve.get("random_disparity_mean", []))
+    rstd = np.asarray(curve.get("random_disparity_std", []))
+    if rmean.size:
+        ax.plot(f, rmean, color=_NEUTRAL, linestyle="--", marker="s",
+                linewidth=1.2, label="random baseline")
+        ax.fill_between(f, rmean - rstd, rmean + rstd,
+                        color=_NEUTRAL, alpha=0.15)
+
+    base = curve.get("base_disparity")
+    if base is not None and np.isfinite(base):
+        ax.axhline(base, color="black", linewidth=0.6, linestyle="-",
+                   alpha=0.5, label="full model")
+
+    ax.set_xlabel("Fraction of training data removed")
+    ax.set_ylabel("Disparity")
+    ax.set_title(title or "Disparity repair curve")
+    ax.legend(frameon=False, loc="best")
+    fig.tight_layout()
+    return fig, ax
+
+
+# -----------------------------------------------------------------------------
+# 8. Mislabel-detection curve
+# -----------------------------------------------------------------------------
+
+
+def plot_detection_curve(
+    self_inf: ArrayLike,
+    is_corrupted: ArrayLike,
+    ax: Axes | None = None,
+    title: str | None = None,
+) -> tuple[Figure, Axes]:
+    """
+    Cumulative recall of known-corrupted samples vs inspection budget.
+
+    Rank training samples by ``|self_inf|`` (largest first) and plot, for
+    every inspection budget "check the top x fraction", the fraction of the
+    known corruptions found. The standard validation figure for
+    ``find_mislabeled``-style workflows: it requires ground truth, so it is
+    used on injection experiments (corrupt some labels on purpose) to decide
+    whether self-influence ranking works on your data before trusting it.
+
+    Detection difficulty depends strongly on how plausible the injected
+    corruption is: gross corruptions (labels far from anything the model
+    would predict) give near-perfect curves that are an *upper bound*,
+    while plausible errors on near-boundary records can drive any detector
+    toward the diagonal. Inject corruptions that look like the errors you
+    actually expect.
+
+    Parameters
+    ----------
+    self_inf : array-like, shape (n_train,)
+        Self-influence scores (see ``pyinfluence.self_influence``). NaN
+        entries are ranked last (never inspected first).
+    is_corrupted : array-like of bool, shape (n_train,)
+        Ground-truth corruption mask (True = this sample was corrupted).
+    ax : matplotlib Axes, optional
+    title : str, optional
+
+    Returns
+    -------
+    fig, ax
+    """
+    s = np.abs(np.asarray(self_inf, dtype=float))
+    corrupted = np.asarray(is_corrupted, dtype=bool).ravel()
+    if corrupted.shape != s.shape:
+        raise ValueError("is_corrupted must have the same shape as self_inf")
+    n_corr = int(corrupted.sum())
+    if n_corr == 0:
+        raise ValueError("is_corrupted has no True entries; nothing to detect.")
+
+    n = s.size
+    # NaN self-influence last: never credited with early detection
+    order = np.argsort(np.where(np.isnan(s), -np.inf, s))[::-1]
+    found = np.cumsum(corrupted[order]) / n_corr
+    frac_inspected = np.arange(1, n + 1) / n
+
+    fig, ax = _ax_or_new(ax)
+    ax.plot(frac_inspected, found, color=_HELPFUL, linewidth=1.8,
+            label="by |self-influence|")
+    ax.plot([0, 1], [0, 1], color=_NEUTRAL, linestyle="--", linewidth=1.0,
+            label="random inspection")
+    ax.plot([0, n_corr / n, 1], [0, 1, 1], color=_NEUTRAL, linestyle=":",
+            linewidth=1.0, alpha=0.8, label="perfect ranking")
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("Fraction of training data inspected")
+    ax.set_ylabel(f"Corruptions found (of {n_corr})")
+    ax.set_title(title or "Mislabel-detection curve")
+    ax.legend(frameon=False, loc="lower right")
+    fig.tight_layout()
+    return fig, ax
+
+
+# -----------------------------------------------------------------------------
+# 9. Influence concentration (Lorenz-style)
+# -----------------------------------------------------------------------------
+
+
+def plot_influence_concentration(
+    scores: ArrayLike,
+    mark_share: float = 0.8,
+    ax: Axes | None = None,
+    title: str | None = None,
+) -> tuple[Figure, Axes]:
+    """
+    Lorenz-style concentration of influence mass across training samples.
+
+    Sort training samples by ``|influence|`` (largest first) and plot the
+    cumulative share of total ``|influence|`` against the fraction of
+    samples. Answers "how many points carry the signal?" — a curve hugging
+    the top-left means a few samples dominate (inspect those); the diagonal
+    means influence is spread uniformly.
+
+    Parameters
+    ----------
+    scores : array-like, shape (n_test, n_train) or (n_train,)
+        Influence scores; 2D input is summed over test samples first. NaN
+        scores are excluded (with the remaining mass renormalized).
+    mark_share : float or None, default=0.8
+        Annotate the smallest sample fraction whose combined mass reaches
+        this share (e.g. "12% of samples carry 80% of influence").
+        None disables the annotation.
+    ax : matplotlib Axes, optional
+    title : str, optional
+
+    Returns
+    -------
+    fig, ax
+    """
+    agg = _aggregate_to_1d(scores, method="sum")
+    mass = np.abs(agg)
+    mass = mass[~np.isnan(mass)]
+    if mass.size == 0 or mass.sum() == 0:
+        raise ValueError("scores carry no influence mass (all zero or NaN).")
+
+    mass_sorted = np.sort(mass)[::-1]
+    cum_share = np.cumsum(mass_sorted) / mass_sorted.sum()
+    frac_samples = np.arange(1, mass.size + 1) / mass.size
+
+    fig, ax = _ax_or_new(ax)
+    ax.plot(frac_samples, cum_share, color=_HELPFUL, linewidth=1.8,
+            label="cumulative |influence|")
+    ax.plot([0, 1], [0, 1], color=_NEUTRAL, linestyle="--", linewidth=1.0,
+            label="uniform")
+
+    if mark_share is not None:
+        j = int(np.searchsorted(cum_share, mark_share))
+        if j < mass.size:
+            fx = frac_samples[j]
+            ax.plot([fx, fx, 0], [0, mark_share, mark_share],
+                    color=_NEUTRAL, linewidth=0.7, linestyle=":")
+            ax.annotate(
+                f"{fx:.0%} of samples carry {mark_share:.0%} of influence",
+                xy=(fx, mark_share), xytext=(fx + 0.03, mark_share - 0.12),
+                fontsize=9,
+            )
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("Fraction of training samples (sorted by |influence|)")
+    ax.set_ylabel("Cumulative share of total |influence|")
+    ax.set_title(title or "Influence concentration")
+    ax.legend(frameon=False, loc="lower right")
+    fig.tight_layout()
+    return fig, ax
+
+
+# -----------------------------------------------------------------------------
+# 10. Top-k stability across replicates
 # -----------------------------------------------------------------------------
 
 
@@ -675,6 +903,8 @@ def plot_top_k_stability(
         rank_vals = np.abs(arr)
     else:
         raise ValueError("show must be 'helpful', 'harmful', or 'abs'")
+    # NaN would sort as largest under argpartition; exclude it from top-k
+    rank_vals = np.where(np.isnan(rank_vals), -np.inf, rank_vals)
 
     # Per-replicate top-k indices
     counts = np.zeros(n_train, dtype=int)
@@ -704,7 +934,7 @@ def plot_top_k_stability(
 
 
 # -----------------------------------------------------------------------------
-# 8. Report wrapper
+# 11. Report wrapper
 # -----------------------------------------------------------------------------
 
 
@@ -820,6 +1050,9 @@ __all__ = [
     "plot_heatmap",
     "plot_method_comparison",
     "plot_removal_curve",
+    "plot_disparity_curve",
+    "plot_detection_curve",
+    "plot_influence_concentration",
     "plot_top_k_stability",
     "report",
 ]

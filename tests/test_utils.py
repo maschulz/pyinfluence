@@ -2,16 +2,15 @@
 
 import numpy as np
 import pytest
-from sklearn.linear_model import Ridge, LogisticRegression, RidgeClassifier
-from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression, Ridge, RidgeClassifier
 
 from pyinfluence import InfluenceFunctions
 from pyinfluence._utils import (
-    top_influential,
-    self_influence,
     _compute_loss_sklearn,
     _get_prediction_value,
     _value_at_test,
+    self_influence,
+    top_influential,
 )
 
 
@@ -112,29 +111,29 @@ class TestSelfInfluence:
         """Self-influence should have shape (n_train,)."""
         X_train, X_test, y_train, y_test = regression_data
         model = Ridge(alpha=1.0).fit(X_train, y_train)
-        
+
         attr = InfluenceFunctions(damping=1e-5, mode='loss')
         attr.fit(model, X_train, y_train)
-        
+
         scores = self_influence(attr)
-        
+
         assert scores.shape == (X_train.shape[0],)
 
     def test_values_are_diagonal_of_full_matrix(self, regression_data):
         """Self-influence should equal diagonal of explain(X_train, y_train)."""
         X_train, X_test, y_train, y_test = regression_data
         model = Ridge(alpha=1.0).fit(X_train, y_train)
-        
+
         attr = InfluenceFunctions(damping=1e-5, mode='loss')
         attr.fit(model, X_train, y_train)
-        
+
         self_scores = self_influence(attr)
         full_scores = attr.explain(X_train, y_train)
-        
+
         # Self-influence is the diagonal: scores[i, i]
         np.testing.assert_allclose(
-            self_scores, 
-            np.diag(full_scores), 
+            self_scores,
+            np.diag(full_scores),
             rtol=1e-10
         )
 
@@ -142,12 +141,12 @@ class TestSelfInfluence:
         """Self-influence should work with binary classification."""
         X_train, X_test, y_train, y_test = binary_classification_data
         model = LogisticRegression(C=1.0, max_iter=1000).fit(X_train, y_train)
-        
+
         attr = InfluenceFunctions(damping=1e-5, mode='loss')
         attr.fit(model, X_train, y_train)
-        
+
         self_scores = self_influence(attr)
-        
+
         assert self_scores.shape == (X_train.shape[0],)
         # Should be finite
         assert np.all(np.isfinite(self_scores))
@@ -156,13 +155,13 @@ class TestSelfInfluence:
         """Self-influence should work in prediction mode."""
         X_train, X_test, y_train, y_test = regression_data
         model = Ridge(alpha=1.0).fit(X_train, y_train)
-        
+
         attr = InfluenceFunctions(damping=1e-5, mode='prediction')
         attr.fit(model, X_train, y_train)
-        
+
         # For prediction mode, we don't need y_train
         self_scores = self_influence(attr)
-        
+
         assert self_scores.shape == (X_train.shape[0],)
 
     def test_high_self_influence_on_outliers(self):
@@ -171,48 +170,65 @@ class TestSelfInfluence:
         # Normal data
         X_normal = np.random.randn(100, 5)
         y_normal = X_normal @ np.array([1, 2, 0.5, -1, 0.3]) + np.random.randn(100) * 0.1
-        
+
         # Add outliers with very different target values
         X_outlier = np.random.randn(5, 5)
         y_outlier = np.random.randn(5) * 100  # Very different scale
-        
+
         X = np.vstack([X_normal, X_outlier])
         y = np.concatenate([y_normal, y_outlier])
-        
+
         model = Ridge(alpha=1.0).fit(X, y)
         attr = InfluenceFunctions(damping=1e-5, mode='loss').fit(model, X, y)
-        
+
         self_scores = self_influence(attr)
-        
+
         # Outliers should have higher absolute self-influence
         normal_influence = np.abs(self_scores[:100])
         outlier_influence = np.abs(self_scores[100:])
-        
+
         # Mean outlier self-influence should be higher than mean normal
         assert np.mean(outlier_influence) > np.mean(normal_influence)
 
     def test_raises_on_unfitted_attributor(self, regression_data):
         """Should raise NotFittedError on unfitted attributor."""
         from sklearn.exceptions import NotFittedError
-        
+
         attr = InfluenceFunctions(damping=1e-5)
-        
+
         with pytest.raises(NotFittedError):
             self_influence(attr)
+
+    @pytest.mark.parametrize("mode", ["loss", "prediction"])
+    def test_self_influence_diag_matches_diagonal_and_self_influence(
+        self, fitted_ridge, mode
+    ):
+        """_self_influence_diag() == diag(explain(X_train, y_train)), and
+        self_influence(attr) uses the fast path (same values)."""
+        model, X_train, y_train, X_test, y_test = fitted_ridge
+        attr = InfluenceFunctions(damping=1e-5, mode=mode)
+        attr.fit(model, X_train, y_train)
+
+        diag_direct = attr._self_influence_diag()
+        full = attr.explain(X_train, y_train if mode == "loss" else None)
+        np.testing.assert_allclose(diag_direct, np.diag(full), equal_nan=True)
+        np.testing.assert_allclose(
+            self_influence(attr), diag_direct, equal_nan=True
+        )
 
 
 # =============================================================================
 # Phase 7: Additional Utility Tests
 # =============================================================================
 
-from pyinfluence._utils import (
-    influence_summary,
-    find_mislabeled,
-    compare_attributors,
+from pyinfluence import LOOInfluence  # noqa: E402
+from pyinfluence._utils import (  # noqa: E402
     aggregate_influence,
+    compare_attributors,
+    find_mislabeled,
     influence_by_group,
+    influence_summary,
 )
-from pyinfluence import LOOInfluence
 
 
 class TestInfluenceSummary:
@@ -224,13 +240,14 @@ class TestInfluenceSummary:
             [0.5, -0.3, 0.8, -0.1, 0.2],
             [-0.1, 0.9, 0.1, 0.3, -0.5],
         ])
-        
+
         result = influence_summary(scores)
-        
+
         # Check all expected keys are present
-        expected_keys = {'mean', 'std', 'min', 'max', 'percentiles', 'sparsity'}
+        expected_keys = {'mean', 'std', 'min', 'max', 'percentiles', 'sparsity', 'n_nan'}
         assert set(result.keys()) == expected_keys
-        
+        assert result['n_nan'] == 0
+
         # Check statistics are correct
         np.testing.assert_allclose(result['mean'], np.mean(scores))
         np.testing.assert_allclose(result['std'], np.std(scores))
@@ -240,23 +257,23 @@ class TestInfluenceSummary:
     def test_percentiles_correct(self):
         """Percentiles should contain 25th, 50th, 75th by default."""
         scores = np.arange(100).astype(float)
-        
+
         result = influence_summary(scores)
-        
+
         # Default percentiles: 25, 50, 75
         assert 25 in result['percentiles']
         assert 50 in result['percentiles']
         assert 75 in result['percentiles']
-        
+
         np.testing.assert_allclose(result['percentiles'][50], np.median(scores))
 
     def test_sparsity_calculation(self):
         """Sparsity should be fraction of near-zero values."""
         # 7 near-zero values out of 10: 0.0 (5 times), 0.001, -0.001
         scores = np.array([0.0, 0.001, -0.001, 0.5, -0.3, 0.0, 0.0, 0.8, 0.0, 0.0])
-        
+
         result = influence_summary(scores, zero_threshold=0.01)
-        
+
         # 7 values within threshold of zero
         expected_sparsity = 7 / 10
         np.testing.assert_allclose(result['sparsity'], expected_sparsity)
@@ -264,9 +281,9 @@ class TestInfluenceSummary:
     def test_1d_input(self):
         """Should work with 1D input."""
         scores = np.array([0.1, -0.2, 0.3, -0.4, 0.5])
-        
+
         result = influence_summary(scores)
-        
+
         np.testing.assert_allclose(result['mean'], np.mean(scores))
         np.testing.assert_allclose(result['min'], -0.4)
         np.testing.assert_allclose(result['max'], 0.5)
@@ -274,9 +291,9 @@ class TestInfluenceSummary:
     def test_custom_percentiles(self):
         """Should support custom percentile values."""
         scores = np.arange(100).astype(float)
-        
+
         result = influence_summary(scores, percentiles=[10, 90])
-        
+
         assert 10 in result['percentiles']
         assert 90 in result['percentiles']
         assert 25 not in result['percentiles']
@@ -288,18 +305,18 @@ class TestFindMislabeled:
     def test_identifies_injected_label_noise(self, regression_data):
         """Should identify samples with artificially flipped labels."""
         X_train, X_test, y_train, y_test = regression_data
-        
+
         # Inject label noise: flip sign of target for first 5 samples
         y_noisy = y_train.copy()
         noise_indices = [0, 1, 2, 3, 4]
         y_noisy[noise_indices] = -y_noisy[noise_indices] * 10  # Extreme flip
-        
+
         model = Ridge(alpha=1.0).fit(X_train, y_noisy)
         attr = InfluenceFunctions(damping=1e-5, mode='loss')
         attr.fit(model, X_train, y_noisy)
-        
+
         suspected = find_mislabeled(attr, threshold='auto')
-        
+
         # At least some of the noisy samples should be detected
         detected_noise = set(suspected) & set(noise_indices)
         assert len(detected_noise) >= 2, f"Expected >=2 noisy samples, got {detected_noise}"
@@ -310,9 +327,9 @@ class TestFindMislabeled:
         model = Ridge(alpha=1.0).fit(X_train, y_train)
         attr = InfluenceFunctions(damping=1e-5, mode='loss')
         attr.fit(model, X_train, y_train)
-        
+
         result = find_mislabeled(attr)
-        
+
         assert isinstance(result, np.ndarray)
         assert result.dtype == np.intp or np.issubdtype(result.dtype, np.integer)
 
@@ -322,11 +339,11 @@ class TestFindMislabeled:
         model = Ridge(alpha=1.0).fit(X_train, y_train)
         attr = InfluenceFunctions(damping=1e-5, mode='loss')
         attr.fit(model, X_train, y_train)
-        
+
         # Higher threshold = fewer samples detected
         result_low = find_mislabeled(attr, threshold=1.0)
         result_high = find_mislabeled(attr, threshold=3.0)
-        
+
         assert len(result_high) <= len(result_low)
 
     def test_threshold_nonpositive_raises(self, fitted_ridge):
@@ -345,27 +362,27 @@ class TestFindMislabeled:
         model = Ridge(alpha=1.0).fit(X_train, y_train)
         attr = InfluenceFunctions(damping=1e-5, mode='loss')
         attr.fit(model, X_train, y_train)
-        
+
         suspected = find_mislabeled(attr, threshold=3.0)
-        
+
         # With clean data and high threshold, very few should be flagged
         assert len(suspected) < len(X_train) * 0.1
 
     def test_works_with_classification(self, binary_classification_data):
         """Should work with classification models."""
         X_train, X_test, y_train, y_test = binary_classification_data
-        
+
         # Flip some labels
         y_noisy = y_train.copy()
         flip_idx = np.random.RandomState(42).choice(len(y_train), 5, replace=False)
         y_noisy[flip_idx] = 1 - y_noisy[flip_idx]
-        
+
         model = LogisticRegression(C=1.0, max_iter=1000).fit(X_train, y_noisy)
         attr = InfluenceFunctions(damping=1e-5, mode='loss')
         attr.fit(model, X_train, y_noisy)
-        
+
         suspected = find_mislabeled(attr, threshold='auto')
-        
+
         assert isinstance(suspected, np.ndarray)
 
 
@@ -376,15 +393,15 @@ class TestCompareAttributors:
         """Should return dict with pearson, spearman, and kendall correlations."""
         X_train, X_test, y_train, y_test = regression_data
         model = Ridge(alpha=1.0).fit(X_train, y_train)
-        
+
         attr1 = InfluenceFunctions(damping=1e-5, mode='loss')
         attr1.fit(model, X_train, y_train)
-        
+
         attr2 = InfluenceFunctions(damping=1e-4, mode='loss')  # Different damping
         attr2.fit(model, X_train, y_train)
-        
+
         result = compare_attributors(attr1, attr2, X_test, y_test)
-        
+
         expected_keys = {'pearson', 'spearman', 'kendall', 'top_k_overlap'}
         assert expected_keys <= set(result.keys())
 
@@ -405,15 +422,15 @@ class TestCompareAttributors:
         """Should work comparing IF vs LOO."""
         X_train, X_test, y_train, y_test = regression_data
         model = Ridge(alpha=1.0).fit(X_train, y_train)
-        
+
         attr_if = InfluenceFunctions(damping=1e-5, mode='loss')
         attr_if.fit(model, X_train, y_train)
-        
+
         attr_loo = LOOInfluence(mode='loss', n_jobs=1)
         attr_loo.fit(model, X_train, y_train)
-        
+
         result = compare_attributors(attr_if, attr_loo, X_test[:5], y_test[:5])
-        
+
         # Should return valid correlation values
         assert -1 <= result['pearson'] <= 1
         assert -1 <= result['spearman'] <= 1
@@ -463,9 +480,9 @@ class TestInfluenceByGroup:
         """Should return dict mapping group labels to aggregate influence."""
         scores = np.array([0.5, -0.3, 0.8, -0.1, 0.2])
         groups = np.array(['A', 'A', 'B', 'B', 'A'])
-        
+
         result = influence_by_group(scores, groups)
-        
+
         assert isinstance(result, dict)
         assert 'A' in result
         assert 'B' in result
@@ -474,9 +491,9 @@ class TestInfluenceByGroup:
         """Default aggregation should sum scores within group."""
         scores = np.array([1.0, 2.0, 3.0, 4.0])
         groups = np.array([0, 0, 1, 1])
-        
+
         result = influence_by_group(scores, groups, method='sum')
-        
+
         np.testing.assert_allclose(result[0], 3.0)  # 1 + 2
         np.testing.assert_allclose(result[1], 7.0)  # 3 + 4
 
@@ -484,9 +501,9 @@ class TestInfluenceByGroup:
         """method='mean' should average scores within group."""
         scores = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         groups = np.array(['X', 'X', 'Y', 'Y', 'Y'])
-        
+
         result = influence_by_group(scores, groups, method='mean')
-        
+
         np.testing.assert_allclose(result['X'], 1.5)  # (1+2)/2
         np.testing.assert_allclose(result['Y'], 4.0)  # (3+4+5)/3
 
@@ -498,22 +515,42 @@ class TestInfluenceByGroup:
             [0.5, 1.5, 2.5, 3.5],
         ])
         groups = np.array([0, 0, 1, 1])
-        
+
         # First aggregate over test (axis=0), then group
         result = influence_by_group(scores, groups, method='sum')
-        
+
         # Aggregate over test: [1.5, 3.5, 5.5, 7.5]
         # Then group: 0 -> 1.5+3.5=5.0, 1 -> 5.5+7.5=13.0
         np.testing.assert_allclose(result[0], 5.0)
         np.testing.assert_allclose(result[1], 13.0)
 
+    def test_2d_scores_method_mean_matches_mean_then_mean(self):
+        """method='mean' should be mean-over-tests then mean-over-group
+        (not a sum/mean hybrid)."""
+        scores = np.array([
+            [1.0, 2.0, 3.0, 4.0],
+            [3.0, 4.0, 7.0, 8.0],
+        ])
+        groups = np.array([0, 0, 1, 1])
+
+        result = influence_by_group(scores, groups, method="mean")
+
+        # Mean over test axis: [2.0, 3.0, 5.0, 6.0]; then mean within group.
+        per_train_mean = scores.mean(axis=0)
+        expected = {
+            0: per_train_mean[groups == 0].mean(),
+            1: per_train_mean[groups == 1].mean(),
+        }
+        np.testing.assert_allclose(result[0], expected[0])
+        np.testing.assert_allclose(result[1], expected[1])
+
     def test_groups_with_single_member(self):
         """Groups with single members should work."""
         scores = np.array([1.0, 2.0, 3.0])
         groups = np.array(['A', 'B', 'C'])
-        
+
         result = influence_by_group(scores, groups)
-        
+
         assert len(result) == 3
         np.testing.assert_allclose(result['A'], 1.0)
         np.testing.assert_allclose(result['B'], 2.0)
@@ -523,9 +560,9 @@ class TestInfluenceByGroup:
         """Should work with integer group labels."""
         scores = np.array([0.5, -0.3, 0.8])
         groups = np.array([1, 2, 1])
-        
+
         result = influence_by_group(scores, groups)
-        
+
         assert 1 in result
         assert 2 in result
 
@@ -654,3 +691,64 @@ class TestValueAtTestFallback:
         y = np.array([0, 1])
         with pytest.raises(ValueError, match="neither predict_proba.*nor decision_function"):
             _compute_loss_sklearn(model, X, y, is_classifier=True)
+
+
+# =============================================================================
+# removal_curve: mode requirement
+# =============================================================================
+
+from pyinfluence._utils import removal_curve  # noqa: E402
+
+
+class TestRemovalCurveModeRequirement:
+    def test_prediction_mode_attributor_raises(self, fitted_ridge):
+        model, X_train, y_train, X_test, y_test = fitted_ridge
+        attr = InfluenceFunctions(mode="prediction", damping=1e-5)
+        attr.fit(model, X_train, y_train)
+        with pytest.raises(ValueError, match="mode='loss'"):
+            removal_curve(attr, X_test, y_test)
+
+
+# =============================================================================
+# stability_replicates
+# =============================================================================
+
+from pyinfluence._utils import stability_replicates  # noqa: E402
+
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    from pyinfluence import viz
+    HAS_MPL = True
+except ImportError:
+    HAS_MPL = False
+
+
+class TestStabilityReplicates:
+    def test_shape_and_reproducible(self, fitted_ridge):
+        model, X_train, y_train, X_test, y_test = fitted_ridge
+        attr = InfluenceFunctions(mode="loss", damping=1e-5)
+        attr.fit(model, X_train, y_train)
+
+        reps1 = stability_replicates(
+            attr, X_test, y_test, n_replicates=6, random_state=0
+        )
+        reps2 = stability_replicates(
+            attr, X_test, y_test, n_replicates=6, random_state=0
+        )
+
+        assert reps1.shape == (6, X_train.shape[0])
+        np.testing.assert_allclose(reps1, reps2)
+
+    @pytest.mark.skipif(not HAS_MPL, reason="matplotlib not installed")
+    def test_feeds_plot_top_k_stability_without_error(self, fitted_ridge):
+        model, X_train, y_train, X_test, y_test = fitted_ridge
+        attr = InfluenceFunctions(mode="loss", damping=1e-5)
+        attr.fit(model, X_train, y_train)
+
+        reps = stability_replicates(
+            attr, X_test, y_test, n_replicates=5, random_state=0
+        )
+        fig, ax = viz.plot_top_k_stability(reps, k=5)
+        assert fig is not None
+        assert ax is not None

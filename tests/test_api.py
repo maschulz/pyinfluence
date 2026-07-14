@@ -2,11 +2,9 @@
 
 import pytest
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import Ridge
 
 from pyinfluence import influence
 from tests.helpers import assert_influence_scores_valid
-
 
 # -----------------------------------------------------------------------------
 # influence() — method='auto'

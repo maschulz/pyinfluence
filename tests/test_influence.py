@@ -10,7 +10,6 @@ import pytest
 from sklearn.linear_model import LogisticRegression, Ridge
 
 from pyinfluence import InfluenceFunctions
-from tests.helpers import assert_influence_scores_valid
 from pyinfluence._linear import (
     _augment_intercept,
     _damping_matrix,
@@ -21,6 +20,7 @@ from pyinfluence._linear import (
     _hessian_logistic,
     _hessian_ridge,
 )
+from tests.helpers import assert_influence_scores_valid
 
 # Fixture names for parameterized tests over all supported linear(-like) models.
 SUPPORTED_LINEAR_MODEL_FIXTURES = [
