@@ -364,19 +364,17 @@ def test_disparity_curve_end_to_end():
     """Round-trip: fairness.disparity_removal_curve output plots directly."""
     from sklearn.linear_model import LogisticRegression
 
-    from pyinfluence import viz
-    from pyinfluence.fairness import (
-        FairnessInfluenceFunctions,
-        disparity_removal_curve,
-    )
+    from pyinfluence import FunctionalInfluence, viz
+    from pyinfluence.fairness import disparity, disparity_removal_curve
 
     rng = np.random.default_rng(0)
     X = rng.normal(size=(80, 4))
     y = (X[:, 0] + 0.5 * rng.normal(size=80) > 0).astype(int)
     a = (rng.uniform(size=80) < 0.5).astype(int)
     model = LogisticRegression(max_iter=1000).fit(X, y)
-    attr = FairnessInfluenceFunctions(metric="dp").fit(model, X, y)
-    scores = attr.explain(X, sensitive_audit=a)
+    F = disparity("dp", a)
+    attr = FunctionalInfluence(F).fit(model, X, y)
+    scores = attr.explain(X)
     curve = disparity_removal_curve(
         scores, model, X, y, X, a, y_audit=y,
         fractions=np.linspace(0.0, 0.1, 3), n_random=2, random_state=0,

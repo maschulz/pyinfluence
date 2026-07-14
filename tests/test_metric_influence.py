@@ -1,8 +1,16 @@
-"""Tests for callable-metric fairness attribution and cohens_d.
+"""Tests for the cohens_d Functional builder and custom-Functional-metric
+fairness attribution.
 
-The closed form differentiates a callable metric by finite differences (or
-an analytic metric_grad) and chains through the GLM score gradients; the
-refit estimator provides exact ground truth for any metric, so every new
+``pyinfluence.fairness.disparity`` accepts only the named metric strings; a
+raw callable now raises. Custom metrics (Cohen's d, or any other statistic)
+are built directly with :mod:`pyinfluence.functionals` or a hand-built
+:class:`~pyinfluence.Functional` and passed straight to the engine
+estimators, or through ``metric=`` on the ``pyinfluence.fairness`` value/
+repair utilities (which accept a metric name or a Functional).
+
+The closed form differentiates a functional's ``fn`` by finite differences
+(or an analytic ``grad``) and chains through the GLM score gradients; the
+refit estimator provides exact ground truth for any functional, so every new
 metric can be validated the same way the built-ins are.
 """
 
@@ -12,14 +20,14 @@ import numpy as np
 import pytest
 from sklearn.linear_model import LogisticRegression, Ridge
 
-from pyinfluence.fairness import (
-    FairnessInfluenceFunctions,
-    RefitFairnessInfluence,
-    SubsampledFairnessInfluence,
-    cohens_d,
-    disparity_removal_curve,
-    disparity_value,
+from pyinfluence import (
+    Functional,
+    FunctionalInfluence,
+    RefitFunctionalInfluence,
+    SubsampledFunctionalInfluence,
 )
+from pyinfluence.fairness import disparity, disparity_removal_curve, disparity_value
+from pyinfluence.functionals import cohens_d
 
 
 @pytest.fixture(scope="module")
@@ -46,7 +54,8 @@ def _manual_cohens_d(scores, mask):
 
 
 # -----------------------------------------------------------------------------
-# cohens_d itself
+# cohens_d itself (builder form: cohens_d(groups) -> Functional, evaluated on
+# a score vector via F(scores))
 # -----------------------------------------------------------------------------
 
 
@@ -54,18 +63,25 @@ def test_cohens_d_matches_manual(clf_problem):
     model, X, y, Xa, ya, a = clf_problem
     p1 = model.predict_proba(Xa)[:, 1]
     expected = _manual_cohens_d(p1, a == 1)
-    assert np.isclose(cohens_d(p1, a), expected)
-    # disparity_value routes callables through the same model scores
+    F = cohens_d(a)
+    assert np.isclose(F(p1), expected)
+    # disparity_value routes a Functional metric through the same model scores
     assert np.isclose(
-        disparity_value(model, Xa, a, ya, metric=cohens_d), expected
+        disparity_value(model, Xa, a, ya, metric=F), expected
     )
 
 
 def test_cohens_d_validation():
-    with pytest.raises(ValueError, match="two audit samples"):
-        cohens_d(np.array([1.0, 2.0, 3.0]), np.array([0, 0, 1]))
+    # errors surface when the functional is evaluated, not when it is built
+    F_too_few = cohens_d(np.array([0, 0, 1]))
+    with pytest.raises(
+        ValueError, match="at least two reference samples per group"
+    ):
+        F_too_few(np.array([1.0, 2.0, 3.0]))
+
+    F_zero_var = cohens_d(np.array([0] * 5 + [1] * 5))
     with pytest.raises(ValueError, match="pooled variance"):
-        cohens_d(np.ones(10), np.array([0] * 5 + [1] * 5))
+        F_zero_var(np.ones(10))
 
 
 # -----------------------------------------------------------------------------
@@ -75,10 +91,11 @@ def test_cohens_d_validation():
 
 def test_closed_form_matches_refit_cohens_d(clf_problem):
     model, X, y, Xa, ya, a = clf_problem
-    cf = FairnessInfluenceFunctions(metric=cohens_d).fit(model, X, y)
-    s_cf = cf.explain(Xa, y_audit=ya, sensitive_audit=a)
-    rf = RefitFairnessInfluence(metric=cohens_d, verbose=0).fit(model, X, y)
-    s_rf = rf.explain(Xa, y_audit=ya, sensitive_audit=a)
+    F = cohens_d(a)
+    cf = FunctionalInfluence(F).fit(model, X, y)
+    s_cf = cf.explain(Xa, ya)
+    rf = RefitFunctionalInfluence(F, verbose=0).fit(model, X, y)
+    s_rf = rf.explain(Xa, ya)
     r = np.corrcoef(s_cf, s_rf)[0, 1]
     slope = np.polyfit(s_cf, s_rf, 1)[0]
     assert r > 0.95
@@ -94,56 +111,43 @@ def test_closed_form_matches_refit_cohens_d_regression():
     Xa = rng.normal(size=(m, p))
     a = (rng.uniform(size=m) < 0.5).astype(int)
     model = Ridge(alpha=1.0).fit(X, y)
-    cf = FairnessInfluenceFunctions(metric=cohens_d).fit(model, X, y)
-    s_cf = cf.explain(Xa, sensitive_audit=a)
-    rf = RefitFairnessInfluence(metric=cohens_d, verbose=0).fit(model, X, y)
-    s_rf = rf.explain(Xa, sensitive_audit=a)
+    F = cohens_d(a)
+    cf = FunctionalInfluence(F).fit(model, X, y)
+    s_cf = cf.explain(Xa)
+    rf = RefitFunctionalInfluence(F, verbose=0).fit(model, X, y)
+    s_rf = rf.explain(Xa)
     assert np.corrcoef(s_cf, s_rf)[0, 1] > 0.95
 
 
 # -----------------------------------------------------------------------------
-# Analytic metric_grad path
+# Analytic gradient path (Functional(fn=..., grad=...) vs finite differences)
 # -----------------------------------------------------------------------------
 
 
-def _cohens_d_grad(scores, sensitive, y=None):
-    """Analytic gradient of cohens_d w.r.t. the score vector."""
-    scores = np.asarray(scores, dtype=float).ravel()
-    svals = np.unique(np.asarray(sensitive).ravel())
-    mask = np.asarray(sensitive).ravel() == svals[1]
-    s1, s0 = scores[mask], scores[~mask]
-    n1, n0 = s1.size, s0.size
-    m1, m0 = s1.mean(), s0.mean()
-    sp2 = ((n1 - 1) * s1.var(ddof=1) + (n0 - 1) * s0.var(ddof=1)) / (
-        n1 + n0 - 2
-    )
-    sp = np.sqrt(sp2)
-    d = (m1 - m0) / sp
-    grad = np.empty_like(scores)
-    grad[mask] = (1.0 / n1) / sp - d * (s1 - m1) / ((n1 + n0 - 2) * sp2)
-    grad[~mask] = (-1.0 / n0) / sp - d * (s0 - m0) / ((n1 + n0 - 2) * sp2)
-    return grad
-
-
-def test_metric_grad_matches_fd(clf_problem):
-    """FD gradient and analytic gradient must yield the same scores."""
+def test_functional_grad_matches_fd(clf_problem):
+    """FD gradient (forced by stripping the builder's analytic grad) and the
+    builder's own analytic gradient must yield the same attribution scores."""
     model, X, y, Xa, ya, a = clf_problem
-    fd = FairnessInfluenceFunctions(metric=cohens_d).fit(model, X, y)
-    an = FairnessInfluenceFunctions(
-        metric=cohens_d, metric_grad=_cohens_d_grad
-    ).fit(model, X, y)
-    s_fd = fd.explain(Xa, sensitive_audit=a)
-    s_an = an.explain(Xa, sensitive_audit=a)
+    F_builder = cohens_d(a)
+    F_fd = Functional(fn=F_builder.fn, of="scores")
+    fd = FunctionalInfluence(F_fd).fit(model, X, y)
+    an = FunctionalInfluence(F_builder).fit(model, X, y)
+    s_fd = fd.explain(Xa)
+    s_an = an.explain(Xa)
     np.testing.assert_allclose(s_fd, s_an, rtol=1e-4, atol=1e-12)
 
 
-def test_metric_grad_bad_shape_raises(clf_problem):
+def test_functional_grad_bad_shape_raises(clf_problem):
     model, X, y, Xa, ya, a = clf_problem
-    bad = FairnessInfluenceFunctions(
-        metric=cohens_d, metric_grad=lambda s, a_, y_: np.ones(3)
-    ).fit(model, X, y)
+    F_builder = cohens_d(a)
+    F_bad = Functional(
+        fn=F_builder.fn,
+        grad=lambda v, yy: np.ones(3),
+        of="scores",
+    )
+    bad = FunctionalInfluence(F_bad).fit(model, X, y)
     with pytest.raises(ValueError, match="one gradient entry per"):
-        bad.explain(Xa, sensitive_audit=a)
+        bad.explain(Xa)
 
 
 # -----------------------------------------------------------------------------
@@ -153,44 +157,45 @@ def test_metric_grad_bad_shape_raises(clf_problem):
 
 def test_absolute_target_scales_by_sign(clf_problem):
     model, X, y, Xa, ya, a = clf_problem
-    val = disparity_value(model, Xa, a, metric=cohens_d)
+    F = cohens_d(a)
+    val = disparity_value(model, Xa, a, metric=F)
     s_signed = (
-        FairnessInfluenceFunctions(metric=cohens_d, target="signed")
+        FunctionalInfluence(F, target="signed")
         .fit(model, X, y)
-        .explain(Xa, sensitive_audit=a)
+        .explain(Xa)
     )
     s_abs = (
-        FairnessInfluenceFunctions(metric=cohens_d, target="absolute")
+        FunctionalInfluence(F, target="absolute")
         .fit(model, X, y)
-        .explain(Xa, sensitive_audit=a)
+        .explain(Xa)
     )
     np.testing.assert_allclose(s_abs, np.sign(val) * s_signed)
 
 
-def test_subsampled_callable_metric(clf_problem):
+def test_subsampled_functional_metric(clf_problem):
     model, X, y, Xa, ya, a = clf_problem
-    sub = SubsampledFairnessInfluence(
-        metric=cohens_d, n_subsets=40, random_state=0, verbose=0
+    F = cohens_d(a)
+    sub = SubsampledFunctionalInfluence(
+        F, n_subsets=40, random_state=0, verbose=0
     ).fit(model, X, y)
-    s = sub.explain(Xa, sensitive_audit=a)
+    s = sub.explain(Xa)
     assert s.shape == (len(y),)
     assert np.isfinite(s).any()
 
 
-def test_removal_curve_callable_metric(clf_problem):
+def test_removal_curve_functional_metric(clf_problem):
     model, X, y, Xa, ya, a = clf_problem
-    cf = FairnessInfluenceFunctions(metric=cohens_d, target="absolute").fit(
-        model, X, y
-    )
-    scores = cf.explain(Xa, sensitive_audit=a)
+    F = cohens_d(a)
+    cf = FunctionalInfluence(F, target="absolute").fit(model, X, y)
+    scores = cf.explain(Xa)
     curve = disparity_removal_curve(
-        scores, model, X, y, Xa, a, y_audit=ya, metric=cohens_d,
+        scores, model, X, y, Xa, a, y_audit=ya, metric=F,
         fractions=np.linspace(0.0, 0.1, 3), n_random=2, random_state=0,
     )
     assert np.isfinite(curve["disparity"]).all()
     assert np.isclose(
         curve["base_disparity"],
-        abs(disparity_value(model, Xa, a, ya, metric=cohens_d)),
+        abs(disparity_value(model, Xa, a, ya, metric=F)),
     )
 
 
@@ -198,12 +203,38 @@ def test_nonsmooth_metric_via_refit(clf_problem):
     """Threshold metrics need no gradient through the refit estimator."""
     model, X, y, Xa, ya, a = clf_problem
 
-    def hard_rate_gap(scores, sensitive, y=None):
-        dec = (np.asarray(scores) >= 0.5).astype(float)
-        m = np.asarray(sensitive) == 1
+    def hard_rate_gap(v, y=None):
+        dec = (np.asarray(v) >= 0.5).astype(float)
+        m = np.asarray(a) == 1
         return float(dec[m].mean() - dec[~m].mean())
 
-    rf = RefitFairnessInfluence(metric=hard_rate_gap, verbose=0).fit(model, X, y)
-    s = rf.explain(Xa, sensitive_audit=a)
+    F = Functional(fn=hard_rate_gap, of="scores", name="hard_rate_gap")
+    rf = RefitFunctionalInfluence(F, verbose=0).fit(model, X, y)
+    s = rf.explain(Xa)
     assert s.shape == (len(y),)
     assert np.isfinite(s).all()
+
+
+# -----------------------------------------------------------------------------
+# disparity()/disparity_value() reject raw callables
+# -----------------------------------------------------------------------------
+
+
+def test_disparity_rejects_callable_metric(clf_problem):
+    model, X, y, Xa, ya, a = clf_problem
+
+    def raw_callable(v, y=None):
+        return float(np.mean(v))
+
+    with pytest.raises(ValueError, match="Unknown metric"):
+        disparity(raw_callable, a)
+
+
+def test_disparity_value_rejects_raw_callable(clf_problem):
+    model, X, y, Xa, ya, a = clf_problem
+
+    def raw_callable(v, y=None):
+        return float(np.mean(v))
+
+    with pytest.raises(TypeError, match="Functional"):
+        disparity_value(model, Xa, a, metric=raw_callable)

@@ -2,15 +2,36 @@
 pyinfluence: Training data attribution for scikit-learn models.
 
 This package provides methods to answer: "Which training examples most
-influenced this prediction?"
+influenced this prediction?" — and, through the functional engine, "which
+training examples most influence any scalar property of the model?"
+
+Namespaces
+----------
+- Top level: the per-test-point attributors (InfluenceFunctions,
+  LOOInfluence, BanzhafInfluence, BootstrapInfluence), the scalar-functional
+  engine (Functional, FunctionalInfluence, RefitFunctionalInfluence,
+  SubsampledFunctionalInfluence, functional_value), the one-shot
+  ``influence()`` API, and analysis utilities.
+- ``pyinfluence.functionals``: ready-made functionals (group_gap, cohens_d,
+  worst_group_mean, mean).
+- ``pyinfluence.fairness``: audit vocabulary (disparity) and repair
+  workflow (disparity_value, disparity_removal_curve, ...).
+- ``pyinfluence.viz``: plotting (optional matplotlib dependency).
 """
 
 from importlib.metadata import PackageNotFoundError, version
 
-from pyinfluence import fairness
+from pyinfluence import fairness, functionals
 from pyinfluence._banzhaf import BanzhafInfluence
 from pyinfluence._base import BaseAttributor
 from pyinfluence._bootstrap import BootstrapInfluence
+from pyinfluence._functional import (
+    Functional,
+    FunctionalInfluence,
+    RefitFunctionalInfluence,
+    SubsampledFunctionalInfluence,
+    functional_value,
+)
 from pyinfluence._influence import InfluenceFunctions
 from pyinfluence._loo import LOOInfluence
 from pyinfluence._utils import (
@@ -26,16 +47,6 @@ from pyinfluence._utils import (
 )
 from pyinfluence._validation import supports
 from pyinfluence.api import influence
-from pyinfluence.fairness import (
-    FairnessInfluenceFunctions,
-    RefitFairnessInfluence,
-    SubsampledFairnessInfluence,
-    cohens_d,
-    disparity_removal_curve,
-    disparity_value,
-    disparity_value_hard,
-    group_removal_effect,
-)
 
 try:
     __version__ = version("pyinfluence")
@@ -45,13 +56,20 @@ except PackageNotFoundError:
 __all__ = [
     # High-level API
     "influence",
-    # Core classes
+    "supports",
+    # Per-test-point attributors
     "BaseAttributor",
     "InfluenceFunctions",
     "LOOInfluence",
     "BanzhafInfluence",
     "BootstrapInfluence",
-    # Utilities
+    # Scalar-functional engine
+    "Functional",
+    "FunctionalInfluence",
+    "RefitFunctionalInfluence",
+    "SubsampledFunctionalInfluence",
+    "functional_value",
+    # Analysis utilities
     "top_influential",
     "self_influence",
     "influence_summary",
@@ -61,16 +79,8 @@ __all__ = [
     "influence_by_group",
     "removal_curve",
     "stability_replicates",
-    "supports",
-    # Fairness attribution
+    # Submodules
     "fairness",
-    "FairnessInfluenceFunctions",
-    "RefitFairnessInfluence",
-    "SubsampledFairnessInfluence",
-    "cohens_d",
-    "disparity_value",
-    "disparity_value_hard",
-    "disparity_removal_curve",
-    "group_removal_effect",
+    "functionals",
     "__version__",
 ]

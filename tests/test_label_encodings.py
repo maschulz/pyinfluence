@@ -13,9 +13,9 @@ import numpy as np
 import pytest
 from sklearn.linear_model import LogisticRegression, RidgeClassifier
 
-from pyinfluence import InfluenceFunctions
+from pyinfluence import FunctionalInfluence, InfluenceFunctions
 from pyinfluence.fairness import (
-    FairnessInfluenceFunctions,
+    disparity,
     disparity_value,
     disparity_value_hard,
 )
@@ -171,12 +171,14 @@ class TestFairnessLabelEncodings:
             model = LogisticRegression(C=1.0, max_iter=2000, random_state=42).fit(
                 X_train, encs_train[name]
             )
-            attr = FairnessInfluenceFunctions(metric=metric, damping=1e-6).fit(
-                model, X_train, encs_train[name], sensitive=a_train
+            if metric in ("eopp", "fpr"):
+                F = disparity(metric, a_test, target_of=model)
+            else:
+                F = disparity(metric, a_test)
+            attr = FunctionalInfluence(F, damping=1e-6).fit(
+                model, X_train, encs_train[name]
             )
-            scores = attr.explain(
-                X_test, y_audit=encs_test[name], sensitive_audit=a_test
-            )
+            scores = attr.explain(X_test, encs_test[name])
             if base is None:
                 base = scores
             else:

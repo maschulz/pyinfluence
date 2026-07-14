@@ -1,19 +1,23 @@
 """Tests for pyinfluence.fairness.
 
-The load-bearing tests validate the closed-form disparity influence against
-exact refitting (RefitFairnessInfluence), requiring correlation ~1 AND
-slope ~1, per metric. Unit tests cover metric values, sign conventions, and
-input validation.
+The load-bearing tests validate the closed-form disparity influence
+(FunctionalInfluence over a disparity() functional) against exact refitting
+(RefitFunctionalInfluence), requiring correlation ~1 AND slope ~1, per
+metric. Unit tests cover metric values, sign conventions, and input
+validation.
 """
 
 import numpy as np
 import pytest
 from sklearn.linear_model import LogisticRegression, Ridge
 
+from pyinfluence import (
+    FunctionalInfluence,
+    RefitFunctionalInfluence,
+    SubsampledFunctionalInfluence,
+)
 from pyinfluence.fairness import (
-    FairnessInfluenceFunctions,
-    RefitFairnessInfluence,
-    SubsampledFairnessInfluence,
+    disparity,
     disparity_removal_curve,
     disparity_value,
     disparity_value_hard,
@@ -41,6 +45,14 @@ def biased_logistic():
     (Xtr, ytr, atr), (Xau, yau, aau) = _make_biased_classification()
     model = LogisticRegression(C=1.0, max_iter=5000).fit(Xtr, ytr)
     return model, Xtr, ytr, atr, Xau, yau, aau
+
+
+def _audit_functional(metric, aau, model=None):
+    """Build the disparity Functional bound to the audit sensitive array,
+    resolving pos_label from the model for eopp/fpr."""
+    if metric in ("eopp", "fpr"):
+        return disparity(metric, aau, target_of=model)
+    return disparity(metric, aau)
 
 
 # -----------------------------------------------------------------------------
@@ -101,18 +113,19 @@ class TestDisparityValue:
 def test_closed_form_matches_refit(biased_logistic, metric):
     model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
     n = len(ytr)
+    F = _audit_functional(metric, aau, model)
 
-    attr = FairnessInfluenceFunctions(metric=metric, damping=1e-8)
-    attr.fit(model, Xtr, ytr, sensitive=atr)
-    pred = attr.explain(Xau, y_audit=yau, sensitive_audit=aau)
+    attr = FunctionalInfluence(F, damping=1e-8)
+    attr.fit(model, Xtr, ytr)
+    pred = attr.explain(Xau, yau)
 
-    exact = RefitFairnessInfluence(
-        metric=metric,
+    exact = RefitFunctionalInfluence(
+        F,
         verbose=0,
         refit_factory=lambda m: LogisticRegression(C=1.0 * n / m, max_iter=5000),
     )
     exact.fit(model, Xtr, ytr)
-    true = exact.explain(Xau, y_audit=yau, sensitive_audit=aau)
+    true = exact.explain(Xau, yau)
 
     ok = ~np.isnan(true)
     r = np.corrcoef(pred[ok], true[ok])[0, 1]
@@ -125,15 +138,16 @@ def test_closed_form_matches_refit(biased_logistic, metric):
 def test_absolute_target_matches_refit(biased_logistic):
     model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
     n = len(ytr)
-    attr = FairnessInfluenceFunctions(metric="dp", target="absolute", damping=1e-8)
+    F = disparity("dp", aau)
+    attr = FunctionalInfluence(F, target="absolute", damping=1e-8)
     attr.fit(model, Xtr, ytr)
-    pred = attr.explain(Xau, sensitive_audit=aau)
-    exact = RefitFairnessInfluence(
-        metric="dp", target="absolute", verbose=0,
+    pred = attr.explain(Xau)
+    exact = RefitFunctionalInfluence(
+        F, target="absolute", verbose=0,
         refit_factory=lambda m: LogisticRegression(C=1.0 * n / m, max_iter=5000),
     )
     exact.fit(model, Xtr, ytr)
-    true = exact.explain(Xau, sensitive_audit=aau)
+    true = exact.explain(Xau)
     ok = ~np.isnan(true)
     r = np.corrcoef(pred[ok], true[ok])[0, 1]
     assert r > 0.95
@@ -151,16 +165,17 @@ def test_ridge_regression_mean_pred_gap():
     alpha = 2.0
     model = Ridge(alpha=alpha).fit(Xtr, ytr)
 
-    attr = FairnessInfluenceFunctions(metric="dp", damping=1e-10)
+    F = disparity("dp", aau)
+    attr = FunctionalInfluence(F, damping=1e-10)
     attr.fit(model, Xtr, ytr)
-    pred = attr.explain(Xau, sensitive_audit=aau)
+    pred = attr.explain(Xau)
 
-    exact = RefitFairnessInfluence(
-        metric="dp", verbose=0,
+    exact = RefitFunctionalInfluence(
+        F, verbose=0,
         refit_factory=lambda m: Ridge(alpha=alpha * m / n),
     )
     exact.fit(model, Xtr, ytr)
-    true = exact.explain(Xau, sensitive_audit=aau)
+    true = exact.explain(Xau)
     r = np.corrcoef(pred, true)[0, 1]
     slope = np.polyfit(pred, true, 1)[0]
     assert r > 0.97
@@ -175,15 +190,16 @@ def test_ridge_regression_mean_pred_gap():
 @pytest.mark.slow
 def test_subsampled_rank_agreement(biased_logistic):
     model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
-    attr = SubsampledFairnessInfluence(
-        metric="dp", n_subsets=300, subset_frac=0.7, random_state=0, verbose=0
+    F = disparity("dp", aau)
+    attr = SubsampledFunctionalInfluence(
+        F, n_subsets=300, subset_frac=0.7, random_state=0, verbose=0
     )
     attr.fit(model, Xtr, ytr)
-    mc = attr.explain(Xau, sensitive_audit=aau)
+    mc = attr.explain(Xau)
 
-    cf = FairnessInfluenceFunctions(metric="dp", damping=1e-8)
+    cf = FunctionalInfluence(F, damping=1e-8)
     cf.fit(model, Xtr, ytr)
-    pred = cf.explain(Xau, sensitive_audit=aau)
+    pred = cf.explain(Xau)
 
     from scipy.stats import spearmanr
 
@@ -201,9 +217,10 @@ def test_subsampled_rank_agreement(biased_logistic):
 def test_group_removal_effect_matches_sum_for_small_groups(biased_logistic):
     model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
     n = len(ytr)
-    attr = FairnessInfluenceFunctions(metric="dp", damping=1e-8)
+    F = disparity("dp", aau)
+    attr = FunctionalInfluence(F, damping=1e-8)
     attr.fit(model, Xtr, ytr)
-    pred = attr.explain(Xau, sensitive_audit=aau)
+    pred = attr.explain(Xau)
     idx = np.argsort(-pred)[:5]
     actual = group_removal_effect(
         model, Xtr, ytr, idx, Xau, aau,
@@ -218,9 +235,10 @@ def test_group_removal_effect_matches_sum_for_small_groups(biased_logistic):
 @pytest.mark.slow
 def test_disparity_removal_curve_reduces_gap(biased_logistic):
     model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
-    attr = FairnessInfluenceFunctions(metric="dp", target="absolute", damping=1e-8)
+    F = disparity("dp", aau)
+    attr = FunctionalInfluence(F, target="absolute", damping=1e-8)
     attr.fit(model, Xtr, ytr)
-    scores = attr.explain(Xau, sensitive_audit=aau)
+    scores = attr.explain(Xau)
     curve = disparity_removal_curve(
         scores, model, Xtr, ytr, Xau, aau, y_audit=yau,
         metric="dp", target="absolute",
@@ -233,17 +251,12 @@ def test_disparity_removal_curve_reduces_gap(biased_logistic):
 
 
 class TestValidation:
-    def test_explain_requires_sensitive(self, biased_logistic):
+    def test_eopp_requires_y_ref(self, biased_logistic):
         model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
-        attr = FairnessInfluenceFunctions(metric="dp").fit(model, Xtr, ytr)
-        with pytest.raises(ValueError, match="sensitive_audit"):
+        F = disparity("eopp", aau, target_of=model)
+        attr = FunctionalInfluence(F).fit(model, Xtr, ytr)
+        with pytest.raises(ValueError, match="pass y_ref"):
             attr.explain(Xau)
-
-    def test_eopp_requires_y_audit(self, biased_logistic):
-        model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
-        attr = FairnessInfluenceFunctions(metric="eopp").fit(model, Xtr, ytr)
-        with pytest.raises(ValueError, match="y_audit"):
-            attr.explain(Xau, sensitive_audit=aau)
 
     def test_kernel_ridge_rejected(self):
         from sklearn.kernel_ridge import KernelRidge
@@ -253,37 +266,24 @@ class TestValidation:
         y = rng.normal(size=50)
         model = KernelRidge(alpha=1.0, kernel="rbf").fit(X, y)
         with pytest.raises(ValueError, match="KernelRidge"):
-            FairnessInfluenceFunctions().fit(model, X, y)
+            FunctionalInfluence(lambda v, y: float(np.mean(v))).fit(model, X, y)
 
     def test_identity_hessian_runs(self, biased_logistic):
         model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
-        attr = FairnessInfluenceFunctions(metric="dp", hessian="identity")
+        F = disparity("dp", aau)
+        attr = FunctionalInfluence(F, hessian="identity")
         attr.fit(model, Xtr, ytr)
-        scores = attr.explain(Xau, sensitive_audit=aau)
+        scores = attr.explain(Xau)
         assert scores.shape == (len(ytr),)
         assert np.isfinite(scores).all()
 
     def test_scores_shape_and_finite(self, biased_logistic):
         model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
-        attr = FairnessInfluenceFunctions(metric="dp").fit(model, Xtr, ytr)
-        scores = attr.explain(Xau, sensitive_audit=aau)
+        F = disparity("dp", aau)
+        attr = FunctionalInfluence(F).fit(model, Xtr, ytr)
+        scores = attr.explain(Xau)
         assert scores.shape == (len(ytr),)
         assert np.isfinite(scores).all()
-
-    @pytest.mark.parametrize(
-        "attr_cls",
-        [FairnessInfluenceFunctions, RefitFairnessInfluence, SubsampledFairnessInfluence],
-        ids=["closed_form", "refit", "subsampled"],
-    )
-    def test_explain_positional_args_raise_type_error(self, biased_logistic, attr_cls):
-        """explain(X, y, sensitive) positionally must fail: y_audit and
-        sensitive_audit are keyword-only so a sensitive attribute can never
-        silently bind to the label slot. Keyword-only enforcement happens at
-        argument-binding time, so this raises even on an unfitted attributor."""
-        model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
-        attr = attr_cls(metric="dp")
-        with pytest.raises(TypeError):
-            attr.explain(Xau, yau, aau)
 
 
 # -----------------------------------------------------------------------------
@@ -296,9 +296,10 @@ def test_disparity_removal_curve_base_disparity_is_full_model_value(biased_logis
     disparity_value() of the *full* model, not the post-removal value at the
     smallest requested fraction."""
     model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
-    attr = FairnessInfluenceFunctions(metric="dp", target="absolute", damping=1e-8)
+    F = disparity("dp", aau)
+    attr = FunctionalInfluence(F, target="absolute", damping=1e-8)
     attr.fit(model, Xtr, ytr)
-    scores = attr.explain(Xau, sensitive_audit=aau)
+    scores = attr.explain(Xau)
 
     curve = disparity_removal_curve(
         scores, model, Xtr, ytr, Xau, aau, y_audit=yau,
@@ -313,31 +314,35 @@ def test_disparity_removal_curve_base_disparity_is_full_model_value(biased_logis
 
 
 # -----------------------------------------------------------------------------
-# SubsampledFairnessInfluence.explain(metric=..., target=...) override
+# RefitFunctionalInfluence.explain(functional=..., target=...) override
 # -----------------------------------------------------------------------------
 
 
-def test_subsampled_explain_metric_override_matches_dedicated_attributor(
+@pytest.mark.slow
+def test_refit_explain_functional_override_matches_dedicated_attributor(
     biased_logistic,
 ):
-    """Overriding metric/target in explain() reuses the fitted subset models
-    (same masks), so the result must equal a second attributor constructed
-    with that metric directly (same random_state -> same subset masks)."""
+    """Overriding functional/target in explain() reuses the fitted LOO models
+    (same refits), so the result must equal a second attributor constructed
+    with that functional directly."""
     model, Xtr, ytr, atr, Xau, yau, aau = biased_logistic
+    n = len(ytr)
+    F_dp = disparity("dp", aau)
+    F_eopp = disparity("eopp", aau, target_of=model)
 
-    attr = SubsampledFairnessInfluence(
-        metric="dp", n_subsets=30, subset_frac=0.6, random_state=7, verbose=0
+    attr = RefitFunctionalInfluence(
+        F_dp, verbose=0,
+        refit_factory=lambda m: LogisticRegression(C=1.0 * n / m, max_iter=5000),
     )
     attr.fit(model, Xtr, ytr)
-    override_scores = attr.explain(
-        Xau, y_audit=yau, sensitive_audit=aau, metric="eopp"
-    )
+    override_scores = attr.explain(Xau, yau, functional=F_eopp)
 
-    dedicated = SubsampledFairnessInfluence(
-        metric="eopp", n_subsets=30, subset_frac=0.6, random_state=7, verbose=0
+    dedicated = RefitFunctionalInfluence(
+        F_eopp, verbose=0,
+        refit_factory=lambda m: LogisticRegression(C=1.0 * n / m, max_iter=5000),
     )
     dedicated.fit(model, Xtr, ytr)
-    dedicated_scores = dedicated.explain(Xau, y_audit=yau, sensitive_audit=aau)
+    dedicated_scores = dedicated.explain(Xau, yau)
 
     np.testing.assert_allclose(
         override_scores, dedicated_scores, equal_nan=True

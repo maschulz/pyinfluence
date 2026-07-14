@@ -404,24 +404,56 @@ hit_b = set(flagged_b) & set(flip)
 print(f'flipped labels recovered by find_mislabeled: {len(hit_b)} / {len(flip)}')
 """),
 
-    ("md", r"""## 15. Fairness: which training points drive a disparity?
+    ("md", r"""## 15. Functional influence: attribute *any* scalar property of the model
 
-`pyinfluence.fairness` attributes *group-disparity* functionals (demographic
-parity, equal-opportunity/FPR gaps, worst-group loss) to training examples:
-`scores[j] ≈ F(D \ z_j) − F(D)` on a fixed audit set. The repair curve below
-removes the most disparity-driving points, refits, and tracks the gap —
-against a random-removal baseline.
+Everything so far asked "how does training point j affect test point i?".
+The **functional engine** asks the more general question: how does training
+point j move any scalar F(θ) — a functional of the model's per-sample
+scores or losses on a fixed reference set? `FunctionalInfluence` is the
+closed form, `RefitFunctionalInfluence` the exact-refit ground truth, and
+`SubsampledFunctionalInfluence` the Monte-Carlo estimator. Ready-made
+functionals (group gaps, Cohen's d, worst-group means, plain means) live in
+`pyinfluence.functionals`; anything else is a `Functional` you write in a
+few lines.
 
-We reuse the breast-cancer classifier and treat a median split on one input
-feature ("mean texture") as a stand-in sensitive attribute."""),
+The loss influence we started with is the simplest special case: taking
+F = mean audit loss reproduces (up to the 1/m aggregation) the summed
+per-test-point loss influence."""),
 
-    ("code", r"""from pyinfluence.fairness import FairnessInfluenceFunctions, disparity_removal_curve
+    ("code", r"""from pyinfluence import FunctionalInfluence, functionals
+
+engine = FunctionalInfluence(functionals.mean('losses'))
+engine.fit(clf, Xb_tr_s, yb_tr_noisy)
+s_mean_loss = engine.explain(Xb_te_s, yb_te)
+
+s_summed = attr_b.explain(Xb_te_s, yb_te).mean(axis=0)  # per-test-point view
+print(f"mean-loss functional vs aggregated loss influence: "
+      f"r = {np.corrcoef(s_mean_loss, s_summed)[0, 1]:.4f}")
+"""),
+
+    ("md", r"""## 16. Fairness: which training points drive a disparity?
+
+The same engine answers audit questions. `pyinfluence.fairness.disparity`
+maps metric names — demographic parity, equal-opportunity/FPR gaps,
+worst-group loss — onto group functionals bound to the audit set's
+sensitive attribute. We treat a median split on one input feature ("mean
+texture") as a stand-in sensitive attribute, attribute the gap, and
+validate with the retrain-based repair curve. One fitted engine explains
+any functional, so swapping in the standardized gap (Cohen's d) is a
+one-liner."""),
+
+    ("code", r"""from pyinfluence.fairness import disparity, disparity_removal_curve
 
 a_audit = (Xb_te[:, 1] > np.median(Xb_te[:, 1])).astype(int)  # synthetic sensitive attr
 
-fattr = FairnessInfluenceFunctions(metric='dp', target='absolute')
+fattr = FunctionalInfluence(disparity('dp', a_audit), target='absolute')
 fattr.fit(clf, Xb_tr_s, yb_tr_noisy)
-f_scores = fattr.explain(Xb_te_s, sensitive_audit=a_audit)
+f_scores = fattr.explain(Xb_te_s)
+
+# same fit, different functional: the standardized gap (Cohen's d)
+d_scores = fattr.explain(Xb_te_s, functional=functionals.cohens_d(a_audit))
+print(f"rank corr dp vs cohens_d attribution: "
+      f"{np.corrcoef(f_scores, d_scores)[0, 1]:.3f}")
 
 fcurve = disparity_removal_curve(
     f_scores, clf, Xb_tr_s, yb_tr_noisy, Xb_te_s, a_audit, y_audit=yb_te,

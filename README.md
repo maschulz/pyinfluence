@@ -2,7 +2,14 @@
 
 Training data attribution for scikit-learn estimators.
 
-`pyinfluence` computes an **influence matrix** $S \in \mathbb{R}^{m \times n}$ that quantifies how each training example $z_j$ affects a model-derived quantity at each test point $x_i$. It is intended for scientific workflows where you need per-example diagnostics (e.g., dataset debugging, auditing, sensitivity analysis), not for producing end-user-facing explanations.
+`pyinfluence` answers two questions about a fitted scikit-learn model. **Per-test-point:** an influence matrix $S \in \mathbb{R}^{m \times n}$ quantifying how each training example $z_j$ affects the loss or prediction at each test point $x_i$. **Per-functional:** how each training example moves any *scalar property* of the model — a fairness gap, AUROC, worst-group loss, or a functional you define — as $\mathrm{score}[j] \approx F(D \setminus z_j) - F(D)$. It is intended for scientific workflows where you need per-example diagnostics (dataset debugging, auditing, sensitivity analysis), not for producing end-user-facing explanations.
+
+| You want to know | Reach for |
+|---|---|
+| Which training points drive *this* prediction or its loss? | `influence()` one-shot; `InfluenceFunctions`, `LOOInfluence`, `BanzhafInfluence`, `BootstrapInfluence` |
+| Which training points drive a scalar property (gap, AUROC, ...)? | `FunctionalInfluence` + builders in `pyinfluence.functionals` |
+| Which training points drive a fairness disparity? | `pyinfluence.fairness.disparity` + the same engine |
+| Are these scores real? | `removal_curve`, `RefitFunctionalInfluence` (exact ground truth), `stability_replicates`, `pyinfluence.viz` |
 
 ## Installation
 
@@ -52,6 +59,36 @@ scores, attr = influence(
 scores2 = attr.explain(X_test[:5], y_test[:5])
 ```
 
+## What is being estimated?
+
+### Notation
+
+- Training set $D = \{z_j\}_{j=1}^n$, with $z_j = (x_j, y_j)$.
+- Test inputs $X_{\mathrm{test}} = \{x_i\}_{i=1}^m$.
+- Influence matrix $S \in \mathbb{R}^{m \times n}$, where $S_{ij}$ refers to training point $j$ and test point $i$. Every attributor's `explain` returns `scores` with this `(n_test, n_train)` shape and indexing.
+
+### Modes (two estimands)
+
+All attributors support `mode="loss"` and `mode="prediction"`, but **classification prediction mode is method-dependent**.
+
+- **Loss mode** (`mode="loss"`, default):
+  - Estimates how a training point affects *test loss*.
+  - **Requires `y_test`** for all methods.
+  - Intended interpretation: positive values indicate training points that are helpful for reducing loss at the test point.
+
+- **Prediction mode** (`mode="prediction"`):
+  - Regression: influence on the scalar prediction $f(x)$. **Does not require `y_test`**.
+  - Classification:
+    - `LOOInfluence`, `BanzhafInfluence`, `BootstrapInfluence`: influence on the **true-class score** at $x$, so **requires `y_test`** to identify the true class.
+    - `InfluenceFunctions` (binary only): influence on the model’s **positive-class probability** $P_\theta(Y=1 \mid x)$ when available, and otherwise on a linear decision value (e.g., for `RidgeClassifier`). It **does not require `y_test`**.
+
+### Sign convention (loss mode)
+
+Loss-mode signs are aligned to a removal interpretation (and validated by tests):
+
+- $S_{ij} > 0$: training point $j$ is **helpful** for test point $i$; removing $z_j$ increases test loss.
+- $S_{ij} < 0$: training point $j$ is **harmful** for test point $i$; removing $z_j$ decreases test loss.
+
 ## Worked examples
 
 ### 1) Self-influence as an outlier/mislabel heuristic
@@ -91,43 +128,7 @@ scores_loo = attr_loo.explain(X_test, y_test)
 print("Correlation:", np.corrcoef(scores_if.ravel(), scores_loo.ravel())[0, 1])
 ```
 
-## Output shape and conventions
-
-- `scores` always has shape `(n_test, n_train)`.
-- `scores[i, j]` refers to test point `i` and training point `j`.
-- In `mode="loss"`: positive indicates “helpful” under the package’s sign convention (see above).
-
-## What is being estimated?
-
-### Notation
-
-- Training set $D = \{z_j\}_{j=1}^n$, with $z_j = (x_j, y_j)$.
-- Test inputs $X_{\mathrm{test}} = \{x_i\}_{i=1}^m$.
-- Influence matrix $S \in \mathbb{R}^{m \times n}$, where $S_{ij}$ refers to training point $j$ and test point $i$.
-
-### Modes (two estimands)
-
-All attributors support `mode="loss"` and `mode="prediction"`, but **classification prediction mode is method-dependent**.
-
-- **Loss mode** (`mode="loss"`, default):
-  - Estimates how a training point affects *test loss*.
-  - **Requires `y_test`** for all methods.
-  - Intended interpretation: positive values indicate training points that are helpful for reducing loss at the test point.
-
-- **Prediction mode** (`mode="prediction"`):
-  - Regression: influence on the scalar prediction $f(x)$. **Does not require `y_test`**.
-  - Classification:
-    - `LOOInfluence`, `BanzhafInfluence`, `BootstrapInfluence`: influence on the **true-class score** at $x$, so **requires `y_test`** to identify the true class.
-    - `InfluenceFunctions` (binary only): influence on the model’s **positive-class probability** $P_\theta(Y=1 \mid x)$ when available, and otherwise on a linear decision value (e.g., for `RidgeClassifier`). It **does not require `y_test`**.
-
-### Sign convention (loss mode)
-
-Loss-mode signs are aligned to a removal interpretation (and validated by tests):
-
-- $S_{ij} > 0$: training point $j$ is **helpful** for test point $i$; removing $z_j$ increases test loss.
-- $S_{ij} < 0$: training point $j$ is **harmful** for test point $i$; removing $z_j$ decreases test loss.
-
-## Methods
+## Per-test-point attribution methods
 
 All methods share the same interface:
 
@@ -235,35 +236,51 @@ scores = influence(
 
 **NaN policy.** Refit-based attributors produce NaN where a point's effect is unmeasurable (failed refits, no OOB runs) — with a warning naming the affected points. All utilities and plots then *exclude* NaN from rankings and statistics (again with a warning); NaN is never silently ranked, averaged, or treated as zero.
 
-## Fairness attribution (`pyinfluence.fairness`)
+## Functional influence: attribute any scalar property of the model
 
-Attribute **group-disparity functionals** — demographic parity ("dp"), equal-opportunity ("eopp") and FPR ("fpr") gaps, worst-group loss — to individual training examples: `scores[j] ≈ F(D \ z_j) − F(D)` on a fixed audit set.
+Beyond per-test-point scores, pyinfluence attributes **scalar functionals** F(θ) — any quantity defined through the model's per-sample *scores* or *losses* on a fixed reference set — to training examples: `scores[j] ≈ F(D \ z_j) − F(D)`.
+
+Three estimators share the estimand: `FunctionalInfluence` (closed form for supported GLMs; `hessian="identity"` gives the gradient-dot baseline), `RefitFunctionalInfluence` (exact leave-one-out ground truth, model-agnostic), and `SubsampledFunctionalInfluence` (Monte-Carlo subsets, model-agnostic). A `Functional` bundles the function with an optional analytic gradient and the value kind; bare callables `fn(scores, y) -> float` work too (differentiated by finite differences — the closed form needs smoothness, the refit-based estimators don't). One fitted attributor can explain any number of functionals (`explain(..., functional=...)`), and `functional_value(model, X, F, y)` evaluates one directly.
+
+Ready-made builders live in **`pyinfluence.functionals`** — domain-neutral, all with analytic gradients:
+
+| Builder | Functional |
+|---|---|
+| `mean(of)` | average score or loss on the reference set |
+| `group_gap(groups, keep=None, of)` | difference in group means, optionally label-conditioned |
+| `cohens_d(groups)` | standardized group gap (pooled-SD normalized) |
+| `worst_group_mean(groups, of)` | max over groups of the group mean |
+| `auroc(pos_label, tau=None)` | ranking quality: exact Mann–Whitney AUROC (refit estimators), or the sigmoid-smoothed surrogate with analytic gradient for the closed form (`tau` in score units) |
+
+Every builder is validated against exact refitting (correlation and slope ≈ 1) in `tests/`; the refit estimator doubles as ground truth for any functional you write yourself. Caveat for scale-normalized statistics like Cohen's d: a point can shrink $|d|$ by inflating within-group variance rather than closing the gap — read the raw `group_gap` attribution alongside.
+
+## Fairness auditing (`pyinfluence.fairness`)
+
+The fairness layer is vocabulary plus workflow over that engine. `disparity(...)` maps audit metric names — demographic parity ("dp"), equal-opportunity ("eopp") and FPR ("fpr") gaps, worst-group loss — onto the builders, handling the sensitive-attribute conventions and the model's positive class:
 
 ```python
 from sklearn.linear_model import LogisticRegression
-from pyinfluence.fairness import FairnessInfluenceFunctions, disparity_removal_curve
+from pyinfluence import FunctionalInfluence
+from pyinfluence.fairness import disparity, disparity_removal_curve
 
 model = LogisticRegression(C=1.0, max_iter=2000).fit(X_train, y_train)
 
-attr = FairnessInfluenceFunctions(metric="dp", target="absolute")
-attr.fit(model, X_train, y_train)
-scores = attr.explain(X_audit, sensitive_audit=a_audit)  # (n_train,)
+F = disparity("dp", a_audit)                     # bound to the audit rows
+attr = FunctionalInfluence(F, target="absolute").fit(model, X_train, y_train)
+scores = attr.explain(X_audit)                   # (n_train,)
 
 # retrain-validated repair curve: drop the most disparity-driving points
 curve = disparity_removal_curve(scores, model, X_train, y_train,
                                 X_audit, a_audit, y_audit=y_audit)
 ```
 
-- `FairnessInfluenceFunctions` — closed form for supported GLMs (`hessian="identity"` gives the gradient-dot baseline).
-- `RefitFairnessInfluence` — exact removal effects via refitting (model-agnostic ground truth).
-- `SubsampledFairnessInfluence` — Monte-Carlo subset estimator for arbitrary sklearn estimators (e.g. gradient boosting).
-- `disparity_value` / `disparity_value_hard` — smoothed and thresholded metric values; `group_removal_effect` — actual effect of removing a set.
-- **Custom metrics**: every `metric=` parameter also accepts a callable `metric(scores, sensitive, y) -> float` over the audit-set score vector — e.g. the bundled `cohens_d` (standardized group gap), quantile gaps, calibration gaps. The closed form differentiates the callable by finite differences (or an analytic `metric_grad=`), so it must be smooth; the refit-based estimators only evaluate it (rank/threshold metrics fine) and double as ground truth for validating any new metric. Caveat for scale-normalized metrics like Cohen's d: a point can shrink $|d|$ by inflating within-group variance rather than closing the gap — read the 'dp' attribution alongside.
-- All `explain` methods take the audit arrays as keyword-only arguments (`explain(X_audit, y_audit=..., sensitive_audit=...)`), so a sensitive attribute can never silently bind to the label slot. Plot repair curves with `viz.plot_disparity_curve(curve)`.
+- `disparity(metric, sensitive, *, target_of=model | pos_label=...)` — "eopp"/"fpr" need the positive label, resolved from `model.classes_[1]` via `target_of` or given explicitly.
+- `disparity_value` / `disparity_value_hard` — smoothed and thresholded metric values on a fitted model; `metric` accepts a name or any `Functional` (e.g. `functionals.cohens_d(a_audit)`).
+- `group_removal_effect` — actual effect of removing a set; `disparity_removal_curve` — repair curve, plotted with `viz.plot_disparity_curve(curve)`.
 
 **Scope: leverage, not fault.** Disparity-influence scores localize which records the measured gap *rests on* and predict what removals would do — they do not identify records whose labels or features are wrong. Within a group-by-outcome cell every attribution score is a function of the recorded features alone, so no attribution ranking can separate corrupted from legitimate records beyond what a feature-reading detector already sees; use per-sample error statistics (label noise) or group-conditional feature residuals (measurement corruption) for that, and use these scores to choose and validate repairs.
 
-Closed-form scores are validated against exact refitting (correlation *and* slope ≈ 1) in `tests/test_fairness.py`. Note: "fairness influence functions" as *feature*-level decomposition (Ghosh et al., FAccT 2023) is a different quantity; this module attributes disparities to training examples.
+Note: "fairness influence functions" as *feature*-level decomposition (Ghosh et al., FAccT 2023) is a different quantity; this module attributes disparities to training examples.
 
 ## Visualization (`pyinfluence.viz`)
 

@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.3.0 (2026-07-15)
+
+Scalar-property attribution is now a first-class, domain-neutral
+engine; the fairness module is a thin vocabulary layer over it. No
+compatibility shims.
+
+### Added
+
+- Engine (top level): `Functional` (a scalar function of per-sample
+  model scores or losses on a reference set, with optional analytic
+  gradient), attributed by `FunctionalInfluence` (closed form),
+  `RefitFunctionalInfluence` (exact leave-one-out), and
+  `SubsampledFunctionalInfluence` (Monte-Carlo subsets); evaluated by
+  `functional_value(model, X, F, y)`. `fit` is functional-independent:
+  one fitted attributor can explain any number of functionals via
+  `explain(..., functional=...)`.
+- `pyinfluence.functionals`: builders with analytic gradients —
+  `mean(of)`, `group_gap(groups, keep=None, of)`, `cohens_d(groups)`,
+  `worst_group_mean(groups, of)`, and `auroc(pos_label)`. Each is
+  validated against exact refitting in the test suite.
+
+### Changed (breaking)
+
+- `pyinfluence.fairness` now provides vocabulary and workflow only:
+  `disparity(metric, sensitive, *, target_of=... | pos_label=...)` maps
+  'dp'/'eopp'/'fpr'/'worst_group_loss' onto the builders;
+  `disparity_value(_hard)`, `group_removal_effect`, and
+  `disparity_removal_curve` keep their signatures (`metric` accepts a
+  name or any `Functional`).
+- Removed `FairnessInfluenceFunctions`, `RefitFairnessInfluence`, and
+  `SubsampledFairnessInfluence` (replaced by the engine classes plus
+  `disparity`), the raw-callable metric form, and the top-level
+  re-exports of fairness utilities.
+- `cohens_d` moved to `pyinfluence.functionals` as a builder returning
+  a `Functional` with an analytic gradient.
+
 ## 0.2.0 (2026-07-15)
 
 Correctness release; the numerical claims below are enforced by tests
