@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use pyinfluence in academic work, please cite it as below."
+title: "pyinfluence: training data attribution for scikit-learn"
+type: software
+authors:
+  - family-names: Schulz
+    given-names: Marc-Andre
+    email: marc.a.schulz@gmail.com
+repository-code: "https://github.com/maschulz/pyinfluence"
+license: MIT
+version: 0.4.0
+date-released: 2026-07-15
+abstract: >-
+  Training data attribution for scikit-learn estimators: closed-form
+  influence functions, exact leave-one-out retraining, Data Banzhaf and
+  bootstrap out-of-bag estimators, and a functional-influence engine that
+  attributes scalar model properties (fairness disparities, AUROC,
+  worst-group loss) to individual training examples.

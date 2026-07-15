@@ -1,11 +1,11 @@
 """Fairness auditing vocabulary and workflow over the functional engine.
 
 Which training points, if removed, would most change the disparity a
-fairness audit measures? This module contributes exactly two things:
+fairness audit measures? This module does two things:
 
-1. **Vocabulary**: :func:`disparity` maps audit metric names — demographic
+1. **Vocabulary**: :func:`disparity` maps audit metric names (demographic
    parity ('dp'), equal opportunity ('eopp'), FPR gap ('fpr'), worst-group
-   loss ('worst_group_loss') — onto the domain-neutral builders in
+   loss ('worst_group_loss')) onto the domain-neutral builders in
    :mod:`pyinfluence.functionals`, handling the fairness-specific details
    (sensitive-attribute conventions, the model's positive class for label
    conditioning).
@@ -24,23 +24,23 @@ Attribution itself is the generic engine:
 
 Estimand
 --------
-For a disparity functional F on a fixed audit set — e.g. the demographic
+For a disparity functional F on a fixed audit set (e.g. the demographic
 parity gap ``F = mean_{a=a1} p(x) - mean_{a=a0} p(x)`` with the binary
-sensitive attribute's values ordered a0 < a1 — every estimator attributes
+sensitive attribute's values ordered a0 < a1), every estimator attributes
 the per-point removal effect ``score[j] ~= F(D \\ {z_j}) - F(D)``. Positive
 scores mark training points whose removal *increases* the gap. With
 ``target='absolute'`` the functional is |F|, so negative scores always mean
 "removing this point shrinks the disparity magnitude".
 
-Scope note: leverage, not fault
--------------------------------
+What these scores do not tell you
+---------------------------------
 Disparity-influence scores localize *leverage*: which training records the
 measured gap rests on, and what removing them would do. They do not
 identify records whose labels or features are wrong. Within a
 group-by-outcome cell, every attribution score is a function of the
 recorded features alone, so a corrupted record and a legitimate one that
-look alike to the model cannot be separated by any attribution score —
-empirically, within-cell retrieval of planted label flips is at chance for
+look alike to the model cannot be separated by any attribution score.
+Empirically, within-cell retrieval of planted label flips is at chance for
 these estimands. Use these scores to find where a disparity lives and to
 choose repair interventions; use mechanism-matched detectors (per-sample
 error for label noise, group-conditional feature residuals for measurement
@@ -109,7 +109,7 @@ class _LabelNeq:
 def _positive_label(model: BaseEstimator):
     """The label whose score the engine's score-functionals consume.
 
-    For classifiers this is ``classes_[1]`` — the class predict_proba[:, 1]
+    For classifiers this is ``classes_[1]``, the class predict_proba[:, 1]
     (or a positive decision value) refers to. Conditioning eopp/fpr on any
     other value would silently compute a different metric (e.g. swap the
     two) whenever labels are not {0, 1}.
@@ -174,7 +174,7 @@ def disparity(
         sort order); any number of groups for 'worst_group_loss'.
     target_of : fitted classifier, optional
         Convenience for 'eopp'/'fpr': resolves ``pos_label`` from the
-        model's ``classes_[1]`` — the class whose score the engine feeds
+        model's ``classes_[1]``, the class whose score the engine feeds
         the functional.
     pos_label : optional
         Explicit positive label for 'eopp'/'fpr' (which audit rows count as

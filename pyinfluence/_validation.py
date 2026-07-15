@@ -150,7 +150,7 @@ def validate_labels_in_classes(
 
 
 def _check_model_not_array(model) -> None:
-    """Catch the sklearn-autopilot mistake of calling fit(X, y)."""
+    """Reject arrays passed in place of the model (the fit(X, y) slip)."""
     if isinstance(model, np.ndarray):
         raise TypeError(
             "model is a numpy array — did you mean fit(model, X, y)? "
@@ -163,7 +163,7 @@ def supports(model: BaseEstimator) -> tuple[bool, str | None]:
     """
     Check whether ``InfluenceFunctions`` can handle a fitted model.
 
-    Never raises and never warns — a programmatic version of the validation
+    Never raises and never warns; a programmatic version of the validation
     that ``InfluenceFunctions.fit`` performs.
 
     Parameters
@@ -204,10 +204,11 @@ def warn_if_data_mismatch(model, X, y) -> None:
 
     A fitted model scoring worse than the majority class (classifier) or the
     mean predictor (regressor) on the very data passed to ``fit`` is the
-    signature of a preprocessing mismatch — most commonly passing *raw*
+    signature of a preprocessing mismatch, most commonly passing *raw*
     features to the inner estimator of a Pipeline that was fit on
     *transformed* features. Influence scores computed from such a pairing
-    are confidently wrong, so this fails loudly instead of silently.
+    are meaningless; warning here is preferable to returning them
+    silently.
     """
     from pyinfluence._utils import _compute_loss_sklearn, _quiet_sklearn
 

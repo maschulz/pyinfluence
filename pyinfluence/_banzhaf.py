@@ -4,11 +4,11 @@ Banzhaf values measure the average marginal contribution of each training
 point across all possible subsets. Unlike LOO which only considers the
 full dataset minus one point, Banzhaf averages over subsets of all sizes.
 
-Why Banzhaf over Shapley?
-- Easier to estimate (uniform subset sampling vs permutation sampling)
-- Lower variance estimates for same number of samples
-- Satisfies symmetry and null player axioms (sufficient for most use cases)
-- Shapley's efficiency axiom (values sum to total) rarely needed in practice
+Banzhaf trades Shapley's efficiency axiom (values summing to the total
+performance) for cheaper estimation: uniform subset sampling instead of
+permutation sampling, with lower variance at the same sample budget. It
+keeps the symmetry and null-player axioms, which is what data-valuation
+use cases typically need.
 """
 
 from __future__ import annotations
@@ -281,7 +281,7 @@ class BanzhafInfluence(BaseAttributor):
     interest in a single call rather than looping.
 
     Points whose subset refits *all* fail (e.g. the only member of a rare
-    class) receive NaN scores and a warning — their value is unmeasurable
+    class) receive NaN scores and a warning: their value is unmeasurable
     with this configuration, not zero.
 
     Unlike influence functions, Banzhaf values are model-agnostic and work

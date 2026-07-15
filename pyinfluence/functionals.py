@@ -8,9 +8,11 @@ Domain-neutral builders: each takes the fixed row-aligned context it needs
 :class:`~pyinfluence.SubsampledFunctionalInfluence`) or for evaluation via
 :func:`~pyinfluence.functional_value`.
 
-All builders carry analytic gradients, so the closed form needs no finite
-differences, and all returned functionals are picklable (fitted attributors
-holding them can be persisted with joblib/pickle — provided any
+The smooth builders carry analytic gradients, so the closed form needs no
+finite differences; :func:`auroc` is a rank statistic and is marked
+``differentiable=False``, which the engine attributes by perturbation
+evaluation instead. All returned functionals are picklable (fitted attributors
+holding them can be persisted with joblib/pickle, provided any
 user-supplied callables, e.g. a custom ``keep=``, are themselves picklable,
 i.e. module-level functions rather than lambdas). The fairness vocabulary
 (demographic parity, equal opportunity, ...) is a thin naming layer over
@@ -18,13 +20,13 @@ these in :mod:`pyinfluence.fairness`.
 
 Builders
 --------
-- :func:`mean` — average score or loss.
-- :func:`group_gap` — difference in group means (optionally restricted to
+- :func:`mean`: average score or loss.
+- :func:`group_gap`: difference in group means (optionally restricted to
   rows selected from the labels).
-- :func:`cohens_d` — standardized group gap (pooled-SD normalized).
-- :func:`worst_group_mean` — max over groups of the group mean.
-- :func:`auroc` — ranking quality (exact Mann-Whitney, or a smoothed
-  surrogate for the closed form).
+- :func:`cohens_d`: standardized group gap (pooled-SD normalized).
+- :func:`worst_group_mean`: max over groups of the group mean.
+- :func:`auroc`: ranking quality (exact Mann-Whitney; attributed via
+  perturbation evaluation, no smoothing).
 """
 
 from __future__ import annotations
@@ -67,15 +69,6 @@ def _two_groups(groups: ArrayLike) -> NDArray[np.bool_]:
             "gaps."
         )
     return g == values[1]
-
-
-def _sigmoid(x: NDArray) -> NDArray:
-    out = np.empty_like(x, dtype=float)
-    nonneg = x >= 0
-    out[nonneg] = 1.0 / (1.0 + np.exp(-x[nonneg]))
-    ex = np.exp(x[~nonneg])
-    out[~nonneg] = ex / (1.0 + ex)
-    return out
 
 
 # -----------------------------------------------------------------------------
@@ -191,9 +184,8 @@ class _WorstGroupMean:
 
 
 class _Auroc:
-    def __init__(self, pos_label, tau):
+    def __init__(self, pos_label):
         self.pos_label = pos_label
-        self.tau = tau
 
     def _split(self, v, y):
         if y is None:
@@ -216,33 +208,13 @@ class _Auroc:
         return v, pos
 
     def value(self, v, y=None):
-        v, pos = self._split(v, y)
-        if self.tau is None:
-            from scipy.stats import rankdata
+        from scipy.stats import rankdata
 
-            n_pos, n_neg = int(pos.sum()), int((~pos).sum())
-            ranks = rankdata(v)  # average ranks handle ties exactly
-            u = ranks[pos].sum() - n_pos * (n_pos + 1) / 2.0
-            return float(u / (n_pos * n_neg))
-        diff = (v[pos][:, None] - v[~pos][None, :]) / self.tau
-        return float(_sigmoid(diff).mean())
-
-    def grad(self, v, y=None):
-        if self.tau is None:
-            raise ValueError(
-                "The exact AUROC is a rank statistic (piecewise constant in "
-                "the scores) and has no usable gradient for the closed "
-                "form. Use auroc(pos_label, tau=...) for the smoothed "
-                "surrogate, or a refit-based estimator."
-            )
         v, pos = self._split(v, y)
         n_pos, n_neg = int(pos.sum()), int((~pos).sum())
-        s = _sigmoid((v[pos][:, None] - v[~pos][None, :]) / self.tau)
-        w = s * (1.0 - s) / (n_pos * n_neg * self.tau)
-        g = np.zeros(v.size)
-        g[pos] = w.sum(axis=1)
-        g[~pos] = -w.sum(axis=0)
-        return g
+        ranks = rankdata(v)  # average ranks handle ties exactly
+        u = ranks[pos].sum() - n_pos * (n_pos + 1) / 2.0
+        return float(u / (n_pos * n_neg))
 
 
 # -----------------------------------------------------------------------------
@@ -254,7 +226,7 @@ def mean(of: ValueKind = "scores") -> Functional:
     """
     The plain average of per-sample values.
 
-    ``mean('losses')`` is the model's mean reference-set loss — attributing
+    ``mean('losses')`` is the model's mean reference-set loss; attributing
     it recovers (audit-aggregated) loss influence.
     """
     payload = _Mean()
@@ -274,7 +246,7 @@ def group_gap(
     The two group values are ordered by sort order (g0 < g1). With
     ``of='scores'`` and a classifier this is the (smoothed) demographic
     parity gap; conditioned on the labels it becomes the equal-opportunity
-    or FPR gap — see :func:`pyinfluence.fairness.disparity` for those
+    or FPR gap. See :func:`pyinfluence.fairness.disparity` for those
     named forms.
 
     Parameters
@@ -335,59 +307,41 @@ def worst_group_mean(
     )
 
 
-def auroc(pos_label, tau: float | None = None) -> Functional:
+def auroc(pos_label) -> Functional:
     """
     Area under the ROC curve of the scores against the reference labels.
 
-    ``auroc(pos_label)`` is the exact Mann-Whitney AUROC (tie-corrected via
-    average ranks). As a *rank statistic* it is piecewise constant in the
-    scores, so it has no usable gradient: use it with the refit-based
-    estimators (:class:`~pyinfluence.RefitFunctionalInfluence`,
-    :class:`~pyinfluence.SubsampledFunctionalInfluence`) or
-    :func:`~pyinfluence.functional_value`. Passing it to the closed form
-    raises a clear error instead of silently returning near-zero scores.
-
-    ``auroc(pos_label, tau=...)`` is the standard sigmoid-smoothed
-    surrogate — the pairwise indicator ``1[s_i > s_j]`` becomes
-    ``sigmoid((s_i - s_j) / tau)`` — which is differentiable, carries an
-    analytic gradient, and converges to the exact AUROC as ``tau -> 0``.
-    Use it for :class:`~pyinfluence.FunctionalInfluence`, and validate the
-    surrogate's fidelity against the exact variant through the refit
-    estimator. ``tau`` is in score units: for probability scores values
-    around 0.01-0.05 work well; for unbounded decision values scale it to
-    the score spread.
+    The exact Mann-Whitney AUROC (tie-corrected via average ranks),
+    identical to ``sklearn.metrics.roc_auc_score``. Works with every
+    estimator: the refit-based ones evaluate it directly, and
+    :class:`~pyinfluence.FunctionalInfluence` attributes it by exact
+    re-evaluation on linearized per-removal score perturbations (a rank
+    statistic is piecewise constant, so it is marked
+    ``differentiable=False`` and the engine skips the chain rule). This
+    agrees with exact leave-one-out refitting at r > 0.99 (enforced in
+    the test suite) and preserves the discreteness of the estimand:
+    removals that swap no (positive, negative) pair score exactly 0.
 
     Parameters
     ----------
     pos_label :
         The label counted as positive (e.g. ``model.classes_[1]``, the
         class whose score the engine feeds the functional). Required
-        explicitly — guessing it from the data invites silent
-        positive-class mix-ups.
-    tau : float, optional
-        Smoothing temperature. None (default) = exact, non-differentiable
-        AUROC.
+        explicitly; it is not inferred from the data.
 
     Notes
     -----
-    Both variants cost O(P*N) in pairs of positives and negatives per
-    evaluation (the smoothed one materializes the pair matrix); fine for
-    reference sets up to a few thousand rows.
+    Per-removal effects on an audit-set AUROC are quantized in steps of
+    1/(n_pos * n_neg); many training points have exactly zero effect.
+    If the question you want answered is "which points change class
+    *separation*" (a smooth, densely-attributable quantity), use
+    :func:`cohens_d` with the true labels as groups. The two estimands
+    are related but distinct (they correlate only moderately per point).
 
-    **Per-point fidelity caveat.** Even when the smoothed *value* closely
-    matches the exact AUROC, the closed form's per-point attribution can
-    track exact-refit ground truth much more loosely than the
-    analytic-gradient functionals do (correlations around 0.7-0.9 in our
-    benchmarks instead of ~1.0, degrading further as the AUC saturates —
-    single-point removal effects on a rank statistic are tiny and
-    discretized). Treat closed-form AUROC rankings as exploratory; for
-    decisions (e.g. an AUROC-repair removal curve), use
-    :class:`~pyinfluence.RefitFunctionalInfluence` or
-    :class:`~pyinfluence.SubsampledFunctionalInfluence` with the exact
-    variant, and always validate with a refit comparison first.
+    Attribution cost with FunctionalInfluence is O(m x n) memory-blocked
+    matrix work plus n exact evaluations at O(m log m) each.
     """
-    if tau is not None and tau <= 0:
-        raise ValueError(f"tau must be positive; got {tau}.")
-    payload = _Auroc(pos_label, tau)
-    name = "auroc" if tau is None else f"auroc_tau={tau:g}"
-    return Functional(fn=payload.value, grad=payload.grad, of="scores", name=name)
+    payload = _Auroc(pos_label)
+    return Functional(
+        fn=payload.value, of="scores", differentiable=False, name="auroc"
+    )

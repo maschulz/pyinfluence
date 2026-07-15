@@ -1,0 +1,8 @@
+{
+  "title": "pyinfluence: training data attribution for scikit-learn",
+  "upload_type": "software",
+  "license": "MIT",
+  "creators": [{"name": "Schulz, Marc-Andre"}],
+  "keywords": ["machine learning", "interpretability", "influence functions",
+               "training data attribution", "fairness", "scikit-learn"]
+}

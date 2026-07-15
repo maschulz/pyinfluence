@@ -162,7 +162,6 @@ def test_functionals_pickle_roundtrip():
         fn.group_gap(a),
         fn.cohens_d(a),
         fn.worst_group_mean(a, of="scores"),
-        fn.auroc(1, tau=0.05),
         fn.auroc(1),
         disparity("dp", a),
         disparity("eopp", a, pos_label=1),

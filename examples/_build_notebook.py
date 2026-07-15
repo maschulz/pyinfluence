@@ -124,7 +124,7 @@ print(f'|max| influence:     {np.abs(scores).max():.2f}')
 
     ("md", r"""## 3. Find the corrupted rows: `plot_self_influence`
 
-**Self-influence** is `scores[j, j]` for each training point — how much
+**Self-influence** is `scores[j, j]` for each training point: how much
 sample `j` influences *its own* prediction. Corrupted samples typically have
 large absolute self-influence because the model has to distort itself to fit
 their wrong labels.
@@ -160,8 +160,8 @@ itself with a **detection curve**: inspect samples in order of decreasing
 finds. This is the figure to produce (via a small injection experiment) before
 trusting `find_mislabeled` on data where the ground truth is unknown.
 
-Two honesty notes. First, the corruption in this demo is deliberately gross
-(labels shifted by ±8–12σ), so the curve below is an *upper bound* —
+Two caveats. First, the corruption in this demo is deliberately gross
+(labels shifted by ±8–12σ), so the curve below is an *upper bound*:
 plausible errors on records the model already finds ambiguous are far harder
 to detect, for self-influence and for every other detector. Second,
 self-influence reads *atypicality*: plain per-sample training error is an
@@ -223,7 +223,7 @@ print(f'random baseline at same fraction:     {rand_m[by_inf.argmin()]:.3f}')
 print(f'loss reduction from removing harmful: {drop:.3f}')
 """),
 
-    ("md", r"""Inverting the direction — removing the *helpful* tail first — should hurt
+    ("md", r"""Inverting the direction, removing the *helpful* tail first, should hurt
 the model dramatically. It does:"""),
 
     ("code", r"""curve_p = removal_curve(
@@ -249,7 +249,7 @@ plt.show()
 """),
 
     ("md", r"""The bar chart collapses each group to a single number. To inspect the
-*spread* — does every sample in group C hurt, or only the corrupted ones? —
+*spread* (does every sample in group C hurt, or only the corrupted ones?),
 use the distribution styles. The corrupted points show up as the outliers
 hanging off the bottom of C's box / violin."""),
 
@@ -328,7 +328,7 @@ plt.show()
 
 Before deciding how many samples to inspect, it helps to know whether the
 influence mass is spread evenly or carried by a handful of points. The
-Lorenz-style concentration curve answers exactly that — here the corrupted
+Lorenz-style concentration curve answers exactly that: here the corrupted
 rows make the curve hug the top-left."""),
 
     ("code", r"""fig, _ = viz.plot_influence_concentration(scores)
@@ -337,12 +337,12 @@ plt.show()
 
     ("md", r"""## 12. Working with named samples
 
-In real data, training samples have names — `patient_03A`, `cmpd_X1Y2`,
+In real data, training samples have names: `patient_03A`, `cmpd_X1Y2`,
 `batch_2024_07_11`. Every plot that shows per-sample tick labels accepts a
 `labels=` argument (and `plot_heatmap` accepts `train_labels=` / `test_labels=`,
 plumbed through `report()` as well).
 
-Anything `np.asarray` understands works — a `list`, an `ndarray`, a pandas
+Anything `np.asarray` understands works: a `list`, an `ndarray`, a pandas
 `Index`, or a pandas `Series` (the same idiom: `labels=df.index`)."""),
 
     ("code", r"""# Build readable labels of the form 'src_C_017' (source + row index).
@@ -377,7 +377,7 @@ plt.show()
 To check that the same diagnostic story works on a real dataset, we fit a
 `LogisticRegression` on `sklearn.datasets.load_breast_cancer` after
 deliberately flipping 10 training labels. The same `report()` call works
-unchanged — the only differences are the model class and `mode='loss'` now
+unchanged: the only differences are the model class and `mode='loss'` now
 uses negative-log-likelihood."""),
 
     ("code", r"""data = load_breast_cancer()
@@ -408,7 +408,7 @@ print(f'flipped labels recovered by find_mislabeled: {len(hit_b)} / {len(flip)}'
 
 Everything so far asked "how does training point j affect test point i?".
 The **functional engine** asks the more general question: how does training
-point j move any scalar F(θ) — a functional of the model's per-sample
+point j move any scalar F(θ), a functional of the model's per-sample
 scores or losses on a fixed reference set? `FunctionalInfluence` is the
 closed form, `RefitFunctionalInfluence` the exact-refit ground truth, and
 `SubsampledFunctionalInfluence` the Monte-Carlo estimator. Ready-made
@@ -434,8 +434,8 @@ print(f"mean-loss functional vs aggregated loss influence: "
     ("md", r"""## 16. Fairness: which training points drive a disparity?
 
 The same engine answers audit questions. `pyinfluence.fairness.disparity`
-maps metric names — demographic parity, equal-opportunity/FPR gaps,
-worst-group loss — onto group functionals bound to the audit set's
+maps metric names (demographic parity, equal-opportunity/FPR gaps,
+worst-group loss) onto group functionals bound to the audit set's
 sensitive attribute. We treat a median split on one input feature ("mean
 texture") as a stand-in sensitive attribute, attribute the gap, and
 validate with the retrain-based repair curve. One fitted engine explains
@@ -471,7 +471,7 @@ print(f"accuracy along the curve: {np.round(fcurve['accuracy'], 3)}")
 - For model-agnostic but expensive estimates: `LOOInfluence` or
   `BootstrapInfluence`.
 - Run `removal_curve` whenever you're not sure if your influence scores mean
-  anything — it's the closest thing to a falsification test the field has."""),
+  anything: it's the closest thing to a falsification test the field has."""),
 ]
 
 

@@ -136,7 +136,7 @@ def plot_top_influencers(
         or pandas Index/Series. Default: integer indices.
     xerr : array-like, optional
         Per-score standard errors, same shape as ``scores`` (or (n_train,)
-        matching a 1D ``scores``). Drawn as error bars — pass
+        matching a 1D ``scores``). Drawn as error bars; pass
         ``attr.scores_std_`` from BanzhafInfluence / BootstrapInfluence to
         show whether the ranking is signal or Monte Carlo noise.
     ax : matplotlib Axes, optional
@@ -506,7 +506,7 @@ def plot_method_comparison(
     InfluenceFunctions tends to be a factor of ~n larger than LOO) while
     still agreeing on the *ranking* of points. For that reason the y=x
     identity line is off by default; the best-fit line and Spearman ρ are
-    the more honest signals of agreement.
+    the more informative signals of agreement.
 
     Parameters
     ----------
@@ -787,7 +787,7 @@ def plot_influence_concentration(
 
     Sort training samples by ``|influence|`` (largest first) and plot the
     cumulative share of total ``|influence|`` against the fraction of
-    samples. Answers "how many points carry the signal?" — a curve hugging
+    samples. Answers "how many points carry the signal?": a curve hugging
     the top-left means a few samples dominate (inspect those); the diagonal
     means influence is spread uniformly.
 

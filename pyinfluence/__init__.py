@@ -2,7 +2,7 @@
 pyinfluence: Training data attribution for scikit-learn models.
 
 This package provides methods to answer: "Which training examples most
-influenced this prediction?" — and, through the functional engine, "which
+influenced this prediction?" and, through the functional engine, "which
 training examples most influence any scalar property of the model?"
 
 Namespaces

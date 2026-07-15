@@ -19,14 +19,16 @@ with an analytic gradient and the value kind (``of='scores'`` or
 
 Estimators
 ----------
-- :class:`FunctionalInfluence` — closed form for supported GLMs: chain rule
-  grad_theta F = sum_i (dF/dv_i) grad_theta v_i through the model's
-  per-sample value gradients, then the influence-function machinery.
-  Requires a smooth functional (analytic gradient or finite differences).
-- :class:`RefitFunctionalInfluence` — exact removal effects by refitting
+- :class:`FunctionalInfluence`: closed form for supported GLMs. Smooth
+  functionals go through the chain rule grad_theta F = sum_i (dF/dv_i)
+  grad_theta v_i (analytic gradient or finite differences); functionals
+  marked ``differentiable=False`` (rank statistics such as the exact
+  AUROC) are attributed by perturbation evaluation: the exact functional
+  re-evaluated on each removal's linearized value change.
+- :class:`RefitFunctionalInfluence`: exact removal effects by refitting
   without each point (model-agnostic ground truth; n refits). Evaluates the
   functional directly, so smoothness is not required.
-- :class:`SubsampledFunctionalInfluence` — Monte-Carlo subset estimator
+- :class:`SubsampledFunctionalInfluence`: Monte-Carlo subset estimator
   (model-agnostic, maximum-sample-reuse, Data-Banzhaf style; T refits).
 
 The refit estimator doubles as ground truth for validating any new
@@ -82,7 +84,7 @@ class Functional:
         ``fn(values, y) -> float`` where ``values`` is the per-sample value
         vector on the reference set and ``y`` the reference labels (or None).
         Row-aligned context beyond ``y`` (e.g. a sensitive attribute) is
-        closed over — see :func:`pyinfluence.fairness.disparity`.
+        closed over. See :func:`pyinfluence.fairness.disparity`.
     grad : callable, optional
         Analytic gradient ``grad(values, y) -> ndarray of shape (m,)``
         w.r.t. the value vector. Default: central finite differences
@@ -93,6 +95,13 @@ class Functional:
         predict_proba, decision value or prediction otherwise).
         ``'losses'``: per-sample loss (NLL / squared error), which requires
         reference labels.
+    differentiable : bool, default=True
+        Whether ``fn`` carries usable first-order information in the
+        values. Set False for rank statistics and other piecewise-constant
+        functionals (e.g. the exact AUROC), whose gradient is zero almost
+        everywhere: :class:`FunctionalInfluence` then attributes them by
+        evaluating ``fn`` exactly on linearized per-removal value
+        perturbations instead of by the chain rule.
     name : str
         Display name.
     """
@@ -100,6 +109,7 @@ class Functional:
     fn: Callable[[NDArray, NDArray | None], float]
     grad: Callable[[NDArray, NDArray | None], NDArray] | None = None
     of: ValueKind = "scores"
+    differentiable: bool = True
     name: str = field(default="")
 
     def __post_init__(self):
@@ -133,10 +143,11 @@ def _fd_grad(
 ) -> NDArray[np.floating]:
     """Central finite-difference gradient of ``fn`` w.r.t. the value vector.
 
-    2m evaluations of an O(m) numpy function — cheap for reference sets up
-    to ~10^4 points. Requires smoothness; thresholded/rank-based functionals
-    yield zero or garbage gradients here and must go through the
-    refit-based estimators instead.
+    2m evaluations of an O(m) numpy function, cheap for reference sets up
+    to ~10^4 points. Requires smoothness; thresholded/rank-based
+    functionals yield zero or meaningless gradients here. Mark those
+    ``differentiable=False`` so the engine uses perturbation evaluation
+    instead.
     """
     values = np.asarray(values, dtype=float).ravel()
     grad = np.empty_like(values)
@@ -268,9 +279,12 @@ class FunctionalInfluence:
         The functional to attribute. A bare callable is treated as a smooth
         score-functional ``fn(scores, y) -> float`` differentiated by
         finite differences; wrap it in :class:`Functional` to supply an
-        analytic gradient or to consume per-sample losses instead. ``fit``
-        is functional-independent, so this may be omitted at construction
-        and supplied per ``explain`` call instead.
+        analytic gradient, to consume per-sample losses, or to mark it
+        ``differentiable=False`` (rank statistics), in which case the
+        engine switches from the chain rule to perturbation evaluation:
+        the exact functional on each removal's linearized value change.
+        ``fit`` is functional-independent, so this may be omitted at
+        construction and supplied per ``explain`` call instead.
     target : {'signed', 'absolute'}, default='signed'
         Attribute F or |F| (gradient scaled by sign(F); undefined at F=0).
     damping : float, default=1e-5
@@ -288,7 +302,7 @@ class FunctionalInfluence:
     Notes
     -----
     ``explain`` returns a vector of length n_train estimating
-    F(D \\ {z_j}) - F(D) — removal-calibrated like all attributors in this
+    F(D \\ {z_j}) - F(D), removal-calibrated like all attributors in this
     package. Validate new functionals against
     :class:`RefitFunctionalInfluence` (correlation and slope ~ 1).
     """
@@ -377,6 +391,9 @@ class FunctionalInfluence:
             X_ref = X_ref.reshape(1, -1)
         y_arr = None if y_ref is None else np.asarray(y_ref).ravel()
 
+        if not func.differentiable:
+            return self._perturbation_scores(func, X_ref, y_arr, target)
+
         base = self.base_attributor_
         gF = self._grad_functional(func, X_ref, y_arr, target)
         n_train = base.train_grads_.shape[0]
@@ -386,6 +403,56 @@ class FunctionalInfluence:
             direction = base.H_inv_ @ gF
         # removal weight -1/n; d theta = (1/n) H^{-1} grad_l_j
         return (base.train_grads_ @ direction) / n_train
+
+    def _perturbation_scores(
+        self,
+        func: Functional,
+        X_ref: NDArray[np.floating],
+        y: NDArray | None,
+        target: TargetName,
+    ) -> NDArray[np.floating]:
+        """Attribute a non-differentiable functional by exact re-evaluation.
+
+        Linearize the parameter step of each removal (the same
+        influence-function step the chain rule uses), propagate it to the
+        per-sample values, and evaluate the *exact* functional on each
+        perturbed value vector:
+
+            score[j] = F(v + dv_j) - F(v),   dv_j = grad_v @ H^{-1} grad_l_j / n
+
+        (removal weight -1/n gives theta_{-j} - theta = +H^{-1} grad_l_j / n,
+        so the value perturbation enters with a plus sign)
+
+        This preserves the discrete structure of rank statistics (removals
+        that swap no pairs score exactly 0) and matches exact-refit ground
+        truth at r > 0.99 for the exact AUROC (enforced in the test
+        suite). Column
+        blocks keep memory at O(m x block) instead of O(m x n).
+        """
+        base = self.base_attributor_
+        model = self.model_
+        values = _model_values(model, X_ref, y, func.of)
+        per_sample = self._per_sample_value_grads(X_ref, y, values, func.of)
+        n_train = base.train_grads_.shape[0]
+
+        def evaluate(v: NDArray) -> float:
+            out = func(v, y)
+            return abs(out) if target == "absolute" else out
+
+        base_value = evaluate(values)
+        # dv (m, n) in column blocks: per_sample @ H^{-1} @ train_grads.T / n
+        left = (
+            per_sample if self.hessian == "identity"
+            else per_sample @ base.H_inv_
+        )
+        scores = np.empty(n_train)
+        block = max(1, int(2**22 // max(1, values.size)))  # ~32 MB blocks
+        for start in range(0, n_train, block):
+            stop = min(start + block, n_train)
+            dv = left @ base.train_grads_[start:stop].T / n_train
+            for j in range(stop - start):
+                scores[start + j] = evaluate(values + dv[:, j]) - base_value
+        return scores
 
     # -- gradient of the functional w.r.t. parameters -------------------------
 

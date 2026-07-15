@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.0 (2026-07-15)
+
+### Changed (breaking)
+
+- `functionals.auroc` no longer accepts a `tau` parameter. The
+  sigmoid-smoothed surrogate is removed; the closed form now attributes
+  the exact Mann-Whitney AUROC via perturbation evaluation (below).
+
+### Added
+
+- Perturbation evaluation for non-differentiable functionals.
+  `Functional` gained a `differentiable` flag (default True). Rank
+  statistics and other piecewise-constant functionals are attributed by
+  evaluating the exact functional on each removal's linearized value
+  change, `score[j] = F(v + dv_j) - F(v)`, computed in memory-bounded
+  column blocks. This preserves the quantized structure of the estimand
+  (removals that swap no pair score exactly zero) and agrees with exact
+  leave-one-out refitting at r > 0.99 in the test suite. For smooth
+  functionals the perturbation and chain-rule paths agree to first
+  order; the estimator API is unchanged.
+- README code blocks are executed as part of the test suite.
+
 ## 0.3.1 (2026-07-15)
 
 ### Added
@@ -57,7 +79,7 @@ compatibility shims.
   `functional_value(model, X, F, y)`. `fit` is functional-independent:
   one fitted attributor can explain any number of functionals via
   `explain(..., functional=...)`.
-- `pyinfluence.functionals`: builders with analytic gradients —
+- `pyinfluence.functionals`: builders with analytic gradients:
   `mean(of)`, `group_gap(groups, keep=None, of)`, `cohens_d(groups)`,
   `worst_group_mean(groups, of)`, and `auroc(pos_label)`. Each is
   validated against exact refitting in the test suite.

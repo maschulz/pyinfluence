@@ -41,8 +41,8 @@ def _quiet_sklearn():
 
     pyinfluence converts inputs to ndarrays once at fit time, so every
     internal predict/predict_proba call on a DataFrame-fitted model would
-    otherwise emit "X does not have valid feature names" — spurious here,
-    since the values are exactly the user's own rows.
+    otherwise emit "X does not have valid feature names". The warning is
+    spurious here, since the values are exactly the user's own rows.
     """
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -439,7 +439,7 @@ def self_influence(
 
     Attributors that implement a ``_self_influence_diag`` method (currently
     InfluenceFunctions, LOOInfluence, BootstrapInfluence) compute the
-    diagonal directly — O(n) memory instead of materializing the full
+    diagonal directly, in O(n) memory instead of materializing the full
     (n_train, n_train) score matrix. The generic fallback builds the full
     matrix; for refit-free attributors this costs O(n^2) memory.
     """
@@ -592,8 +592,8 @@ def find_mislabeled(
     they strongly affect their own predictions because the model must
     distort to accommodate their incorrect labels.
 
-    Self-influence measures *atypicality* — how unusual a record is for
-    the model — which is the trace label errors typically leave. Three
+    Self-influence measures *atypicality* (how unusual a record is for
+    the model), which is the trace label errors typically leave. Three
     caveats follow:
 
     - Plain per-sample training loss/error is an equally strong baseline;
@@ -1063,7 +1063,7 @@ def stability_replicates(
     This measures a *different* uncertainty than ``scores_std_`` (Banzhaf/
     Bootstrap): ``scores_std_`` is Monte-Carlo noise of each score *given
     the training set*, while replicates measure how the ranking shifts when
-    the training data itself is resampled. They can disagree sharply — a
+    the training data itself is resampled. They can disagree sharply: a
     ranking can be precise (high signal-to-noise per score) yet unstable
     across resamples. Check both before trusting a top-k.
 
@@ -1079,8 +1079,8 @@ def stability_replicates(
     n_replicates : int, default=20
         Number of bootstrap replicates. Cost: ``n_replicates`` x (one model
         refit + one full attributor fit). For refit-based attributors that
-        multiplies their internal refits — e.g. 20 replicates of a
-        50-estimator BootstrapInfluence = ~1000 model fits — and is
+        multiplies their internal refits (e.g. 20 replicates of a
+        50-estimator BootstrapInfluence = ~1000 model fits) and is
         independent of the test-set size. Parallelism comes from the
         attributor you pass in (construct it with ``n_jobs=-1``); its
         ``verbose`` setting is likewise reused, so pass a ``verbose=0``
