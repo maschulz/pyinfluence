@@ -86,6 +86,26 @@ DISPARITY_METRICS = ("dp", "eopp", "fpr", "worst_group_loss")
 MetricName = Literal["dp", "eopp", "fpr", "worst_group_loss"]
 
 
+class _LabelEq:
+    """Picklable row filter: keep rows whose label equals ``pos``."""
+
+    def __init__(self, pos):
+        self.pos = pos
+
+    def __call__(self, y):
+        return np.asarray(y).ravel() == self.pos
+
+
+class _LabelNeq:
+    """Picklable row filter: keep rows whose label differs from ``pos``."""
+
+    def __init__(self, pos):
+        self.pos = pos
+
+    def __call__(self, y):
+        return np.asarray(y).ravel() != self.pos
+
+
 def _positive_label(model: BaseEstimator):
     """The label whose score the engine's score-functionals consume.
 
@@ -193,13 +213,9 @@ def disparity(
                 f"metric={metric!r} needs the positive label: pass "
                 "target_of=model (resolves classes_[1]) or pos_label=..."
             )
-        pos = pos_label
-        if metric == "eopp":
-            def keep(y):
-                return np.asarray(y).ravel() == pos
-        else:  # fpr
-            def keep(y):
-                return np.asarray(y).ravel() != pos
+        keep = (
+            _LabelEq(pos_label) if metric == "eopp" else _LabelNeq(pos_label)
+        )
 
     func = group_gap(sensitive, keep=keep, of="scores")
     return dataclasses.replace(func, name=metric)
@@ -243,7 +259,10 @@ def disparity_value(
         resolved from the model's ``classes_``), or any Functional (e.g.
         ``functionals.cohens_d(sensitive)``).
     target : {'signed', 'absolute'}, default='signed'
-        Report the signed value or its absolute value.
+        Report the signed value or its absolute value. Note:
+        :func:`disparity_removal_curve` defaults to ``'absolute'`` instead
+        (repair tracks the gap magnitude); mind the difference when using
+        both in one analysis.
 
     Returns
     -------
@@ -378,7 +397,9 @@ def disparity_removal_curve(
         increases disparity). Any engine estimator produces these.
     model, X_train, y_train : the fitted model and its training data.
     X_audit, sensitive_audit, y_audit : audit set.
-    metric, target : disparity to track (default absolute gap).
+    metric, target : disparity to track. Note the default here is
+        ``target='absolute'`` (repair tracks the gap magnitude), unlike
+        :func:`disparity_value`'s ``'signed'`` default.
     fractions : array-like, optional
         Removal fractions in [0, 1). Default: 11 points in [0, 0.2].
     n_random : int, default=5

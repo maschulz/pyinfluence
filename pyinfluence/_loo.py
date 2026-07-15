@@ -19,7 +19,7 @@ from pyinfluence._base import (
     check_is_fitted,
 )
 from pyinfluence._utils import _value_at_test, tqdm_joblib
-from pyinfluence._validation import validate_refit_model
+from pyinfluence._validation import validate_refit_model, warn_if_data_mismatch
 
 if TYPE_CHECKING:
     from typing import Self
@@ -152,6 +152,7 @@ class LOOInfluence(BaseAttributor):
         _validate_mode(self.mode)
         validate_refit_model(model)
         X, y = _prepare_fit_inputs(X, y)
+        warn_if_data_mismatch(model, X, y)
         self.model_ = model
         self.X_train_ = X
         self.y_train_ = y

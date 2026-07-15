@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.3.1 (2026-07-15)
+
+### Added
+
+- Every `fit` warns when the model performs worse than a trivial
+  baseline on the data it was given (negative log-likelihood against
+  class frequencies for probabilistic classifiers, accuracy/R^2
+  otherwise). This catches preprocessing mismatches such as passing raw
+  features to the inner estimator of a Pipeline that was fit on
+  transformed features.
+- `influence(method='auto')` warns when an unsupported model type falls
+  back to a refit-based method, and notes that model-agnostic
+  estimators can disagree substantially at the per-point level on
+  non-linear models; compare estimators and run `removal_curve` before
+  acting on individual rankings.
+- Functionals and fitted functional attributors are picklable.
+- Row-alignment validation on group functionals and `auroc`, with clear
+  error messages for mismatched audit arrays.
+
+### Fixed
+
+- scikit-learn's "X does not have valid feature names" warning is
+  suppressed for internal predictions on DataFrame-fitted models.
+- `stability_replicates` deduplicates repeated per-replicate warnings
+  and documents its cost model.
+- `viz.report` raises a clear error for functional attributors;
+  `plot_top_influencers` uses a neutral default title for 1-D scores.
+- `influence_by_group` rejects composite (tuple) keys with an
+  actionable message.
+
+### Documentation
+
+- Every README code block runs as written, top to bottom.
+- New worked example: explaining a single prediction.
+- Documented pandas conventions (positional indices; the index is not
+  used for alignment), the AUROC per-point fidelity considerations, the
+  distinction between `scores_std_` and `stability_replicates`, the
+  leave-one-out regularization-scaling protocol, and a known issue with
+  numpy 2.0.x on macOS (spurious matmul RuntimeWarnings from the
+  Accelerate backend).
+
 ## 0.3.0 (2026-07-15)
 
 Scalar-property attribution is now a first-class, domain-neutral

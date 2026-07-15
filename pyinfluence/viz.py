@@ -147,6 +147,7 @@ def plot_top_influencers(
     fig, ax
     """
     s_all = np.asarray(scores, dtype=float)
+    is_1d = s_all.ndim == 1
     if s_all.ndim == 1:
         row = s_all
         err_row = None if xerr is None else np.asarray(xerr, dtype=float).ravel()
@@ -193,9 +194,12 @@ def plot_top_influencers(
     ax.axvline(0, color="black", linewidth=0.6)
     ax.set_xlabel("Influence")
     ax.set_ylabel("Training sample")
+    # 1-D input has no "test sample" framing (e.g. functional-influence
+    # score vectors)
     ax.set_title(
         title if title is not None
-        else f"Top influencers for test sample {test_idx}"
+        else ("Top influencers" if is_1d
+              else f"Top influencers for test sample {test_idx}")
     )
     fig.tight_layout()
     return fig, ax
@@ -991,7 +995,14 @@ def report(
     plt = _require_mpl()
     from pyinfluence._utils import self_influence as _self_influence
 
-    scores = attributor.explain(X_test, y_test)
+    scores = np.asarray(attributor.explain(X_test, y_test))
+    if scores.ndim != 2:
+        raise TypeError(
+            "report() is a per-test-point dashboard and needs an attributor "
+            "whose explain() returns (n_test, n_train) scores. Functional "
+            "attributors return a single (n_train,) vector - plot those "
+            "with plot_top_influencers(scores) and plot_disparity_curve(...)."
+        )
     self_inf = _self_influence(attributor)
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 9))

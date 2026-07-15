@@ -26,10 +26,12 @@ from pyinfluence._linear import (
     _hessian_ridge,
     _invert_hessian,
 )
+from pyinfluence._utils import _quiet_sklearn
 from pyinfluence._validation import (
     extract_regularization,
     validate_labels_in_classes,
     validate_model,
+    warn_if_data_mismatch,
 )
 
 if TYPE_CHECKING:
@@ -141,6 +143,7 @@ class InfluenceFunctions(BaseAttributor):
         self.model_type_ = validate_model(model)
         self.model_ = model
         X, y = _prepare_fit_inputs(X, y)
+        warn_if_data_mismatch(model, X, y)
 
         # Store original training data
         self.X_train_raw_ = X
@@ -233,7 +236,8 @@ class InfluenceFunctions(BaseAttributor):
     ) -> None:
         """Fit for binary logistic regression."""
         # Get predicted probabilities for classes_[1]
-        probs = self.model_.predict_proba(self.X_train_raw_)[:, 1]
+        with _quiet_sklearn():
+            probs = self.model_.predict_proba(self.X_train_raw_)[:, 1]
 
         # Compute Hessian and its inverse
         H = _hessian_logistic(X_aug, probs, reg_lambda, self.damping, self.has_intercept_)
@@ -438,7 +442,8 @@ class InfluenceFunctions(BaseAttributor):
         else:
             X_test_raw = X_test_aug
 
-        probs = self.model_.predict_proba(X_test_raw)[:, 1]
+        with _quiet_sklearn():
+            probs = self.model_.predict_proba(X_test_raw)[:, 1]
         y_test = validate_labels_in_classes(
             y_test, self.model_.classes_, name="y_test"
         )
@@ -458,7 +463,8 @@ class InfluenceFunctions(BaseAttributor):
         else:
             X_test_raw = X_test_aug
 
-        probs = self.model_.predict_proba(X_test_raw)[:, 1]
+        with _quiet_sklearn():
+            probs = self.model_.predict_proba(X_test_raw)[:, 1]
         weights = probs * (1 - probs)
         return X_test_aug * weights[:, np.newaxis]
 

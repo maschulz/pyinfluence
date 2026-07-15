@@ -14,7 +14,8 @@ Training data attribution for scikit-learn estimators.
 ## Installation
 
 ```bash
-pip install pyinfluence
+pip install pyinfluence            # once published to PyPI
+pip install git+https://github.com/maschulz/pyinfluence   # until then
 ```
 
 Optional plotting utilities:
@@ -22,6 +23,12 @@ Optional plotting utilities:
 ```bash
 pip install "pyinfluence[viz]"
 ```
+
+Known issue: numpy 2.0.x on macOS (Accelerate BLAS) emits spurious
+`RuntimeWarning: ... encountered in matmul` from perfectly finite
+computations — inside pyinfluence and inside scikit-learn itself. Upgrade
+to numpy ≥ 2.1 (needs Python ≥ 3.10) or pin numpy < 2; results are
+unaffected either way.
 
 ## Quickstart
 
@@ -109,9 +116,37 @@ print("Largest |self-influence| indices:", np.argsort(np.abs(s_self))[-10:][::-1
 print("Suspected mislabeled indices:", suspected[:10])
 ```
 
-Interpretation: `find_mislabeled` is a ranking heuristic (z-scores on $|S_{ii}|$); it is not a proof of label error. Self-influence measures *atypicality*: plain per-sample training loss is an equally strong baseline, corrupted features (as opposed to labels) leave a trace it does not read, and detection degrades sharply for plausible, near-boundary errors. Validate on your data with an injection experiment (`viz.plot_detection_curve`) before trusting the ranking.
+Interpretation: `find_mislabeled` is a ranking heuristic (z-scores on $|S_{ii}|$); it is not a proof of label error, and its 'auto' threshold is deliberately conservative — for triage under an inspection budget, rank by `np.abs(self_influence(attr))` and take your top-k instead. Self-influence measures *atypicality*: plain per-sample training loss is an equally strong baseline, corrupted features (as opposed to labels) leave a trace it does not read, and detection degrades sharply for plausible, near-boundary errors. Validate on your data with an injection experiment (`viz.plot_detection_curve`) before trusting the ranking.
 
-### 2) Comparing methods on the same problem
+### 2) Explaining a single (mis)prediction
+
+The most common interactive workflow: pick a test case, ask which training
+points drove it, and say how sure you are.
+
+```python
+import numpy as np
+from pyinfluence import InfluenceFunctions, LOOInfluence, stability_replicates
+from pyinfluence import compare_attributors, viz
+
+attr = InfluenceFunctions(mode="loss", damping=1e-5).fit(model, X_train, y_train)
+i = int(np.argmax(np.abs(model.predict(X_test) - y_test)))   # worst test case
+
+scores = attr.explain(X_test[[i]], y_test[[i]])
+viz.plot_top_influencers(scores, k=8)                        # who drove it
+
+# how sure are we? (1) slow method agrees, (2) ranking survives resampling
+stats = compare_attributors(attr, LOOInfluence(mode="loss", verbose=0).fit(
+    model, X_train, y_train), X_test[[i]], y_test[[i]])
+reps = stability_replicates(attr, X_test[[i]], y_test[[i]], n_replicates=20)
+viz.plot_top_k_stability(reps, k=8)
+
+fig = viz.report(attr, X_test, y_test)   # returns a bare Figure (no axes)
+```
+
+Section 4 of [`examples/showcase.ipynb`](examples/showcase.ipynb) walks
+through this end to end.
+
+### 3) Comparing methods on the same problem
 
 ```python
 import numpy as np
@@ -155,7 +190,7 @@ $$
 
 where $\lambda$ is the model's L2 regularization expressed in the per-sample-average objective ($\alpha/n$ for Ridge-family models, $1/(Cn)$ for LogisticRegression; the intercept dimension is not regularized). For KernelRidge the dual-space penalty matrix is $(\lambda/n)K$, which makes the formula exact at the KRR stationarity condition.
 
-The $1/n$ factor calibrates the classical infinitesimal-upweighting derivative to the finite effect of **deleting** one training point (a weight change of $-1/n$), so `InfluenceFunctions` scores estimate the same quantity as `LOOInfluence` — in both sign and magnitude. Agreement with exact leave-one-out retraining (correlation and regression slope ≈ 1) is tested in this repository (`tests/test_loo_agreement.py`).
+The $1/n$ factor calibrates the classical infinitesimal-upweighting derivative to the finite effect of **deleting** one training point (a weight change of $-1/n$), so `InfluenceFunctions` scores estimate the same quantity as `LOOInfluence` — in both sign and magnitude. Agreement with exact leave-one-out retraining (correlation and regression slope ≈ 1) is tested in this repository (`tests/test_loo_agreement.py`). The slope claim assumes the leave-one-out refit preserves the *per-sample-average* regularization (alpha scaled by (n−1)/n); a naive refit at fixed alpha shifts the effective regularization and can show a different slope at small n — see the test file for the exact protocol.
 
 **Supported estimators (as implemented):**
 
@@ -200,6 +235,7 @@ OOB counts can be small (or zero) for some points when $B$ is small; in that cas
 - If you need model-agnostic influence and $n$ is small enough to refit many times: use `LOOInfluence`.
 - If you want a subset-average notion of contribution (data valuation) and can afford repeated refits: use `BanzhafInfluence`.
 - If you want a model-agnostic baseline with controllable compute and are comfortable with OOB variability: use `BootstrapInfluence`.
+- **Non-linear models (trees, boosting, nets):** the model-agnostic estimators measure different estimands (full-data LOO effect vs. subset-averaged effects) and can rank points **almost independently of one another** on highly non-linear models — we have observed per-point correlations near 0 between `LOOInfluence` and `BootstrapInfluence` on boosted trees, with each still beating the random baseline on its own `removal_curve`. Aggregate validity does not imply per-point identifiability: run `compare_attributors` between two methods and a `removal_curve` before acting on any individual ranking.
 
 ## High-level API: `influence(...)`
 
@@ -230,8 +266,8 @@ scores = influence(
 - `compare_attributors(attr1, attr2, ...)`: correlations and top-k overlap across two methods.
 - `aggregate_influence(scores, axis=0, method=...)`: aggregate across test points or train points.
 - `influence_by_group(scores, groups, ...)`: aggregate influence by group labels on training samples.
-- `removal_curve(attributor, X_test, y_test, ...)`: retrain after dropping the top-k% most harmful (or helpful) training points and compare to a random-removal baseline — the standard validation of whether influence scores carry signal. Requires `mode='loss'`.
-- `stability_replicates(attributor, X_test, y_test, n_replicates=20)`: rerun the attributor on bootstrap-resampled training sets; feeds `viz.plot_top_k_stability`.
+- `removal_curve(attributor, X_test, y_test, ...)`: retrain after dropping the top-k% most harmful (or helpful) training points and compare to a random-removal baseline — the standard validation of whether influence scores carry signal. Requires `mode='loss'`; see `help(removal_curve)` for the `fractions`/`direction`/`n_random` parameters and the returned dict.
+- `stability_replicates(attributor, X_test, y_test, n_replicates=20)`: rerun the attributor on bootstrap-resampled training sets; feeds `viz.plot_top_k_stability`. Note this measures a *different* uncertainty than `scores_std_` (Banzhaf/Bootstrap): per-score Monte-Carlo noise given the training set vs. ranking stability under training-data resampling — they can disagree, so check both. Cost is `n_replicates` full attributor refits (independent of test-set size).
 - `supports(model)`: `(True, None)` if `InfluenceFunctions` can handle the fitted model, else `(False, reason)` — never raises or warns.
 
 **NaN policy.** Refit-based attributors produce NaN where a point's effect is unmeasurable (failed refits, no OOB runs) — with a warning naming the affected points. All utilities and plots then *exclude* NaN from rankings and statistics (again with a warning); NaN is never silently ranked, averaged, or treated as zero.
@@ -250,18 +286,26 @@ Ready-made builders live in **`pyinfluence.functionals`** — domain-neutral, al
 | `group_gap(groups, keep=None, of)` | difference in group means, optionally label-conditioned |
 | `cohens_d(groups)` | standardized group gap (pooled-SD normalized) |
 | `worst_group_mean(groups, of)` | max over groups of the group mean |
-| `auroc(pos_label, tau=None)` | ranking quality: exact Mann–Whitney AUROC (refit estimators), or the sigmoid-smoothed surrogate with analytic gradient for the closed form (`tau` in score units) |
+| `auroc(pos_label, tau=None)` | ranking quality: exact Mann–Whitney AUROC (refit estimators), or the sigmoid-smoothed surrogate with analytic gradient for the closed form (`tau` in score units). Per-point rankings from the smoothed surrogate track refit ground truth loosely (r ≈ 0.7–0.9) — validate before acting. |
 
-Every builder is validated against exact refitting (correlation and slope ≈ 1) in `tests/`; the refit estimator doubles as ground truth for any functional you write yourself. Caveat for scale-normalized statistics like Cohen's d: a point can shrink $|d|$ by inflating within-group variance rather than closing the gap — read the raw `group_gap` attribution alongside.
+All builders (and fitted attributors holding them) are picklable, so expensive refit attributors can be persisted with joblib. Every builder is validated against exact refitting (correlation and slope ≈ 1) in `tests/`; the refit estimator doubles as ground truth for any functional you write yourself. Caveat for scale-normalized statistics like Cohen's d: a point can shrink $|d|$ by inflating within-group variance rather than closing the gap — read the raw `group_gap` attribution alongside.
 
 ## Fairness auditing (`pyinfluence.fairness`)
 
 The fairness layer is vocabulary plus workflow over that engine. `disparity(...)` maps audit metric names — demographic parity ("dp"), equal-opportunity ("eopp") and FPR ("fpr") gaps, worst-group loss — onto the builders, handling the sensitive-attribute conventions and the model's positive class:
 
 ```python
+from sklearn.datasets import make_classification
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+
 from pyinfluence import FunctionalInfluence
 from pyinfluence.fairness import disparity, disparity_removal_curve
+
+X, y = make_classification(n_samples=600, n_features=8, random_state=0)
+X_train, X_audit, y_train, y_audit = train_test_split(X, y, test_size=0.4,
+                                                      random_state=0)
+a_audit = (X_audit[:, 0] > 0).astype(int)  # the audit set's sensitive attribute
 
 model = LogisticRegression(C=1.0, max_iter=2000).fit(X_train, y_train)
 
@@ -298,7 +342,7 @@ Plotting requires matplotlib ≥ 3.9 (`pip install "pyinfluence[viz]"`). Each fu
 | `plot_detection_curve(self_inf, is_corrupted)` | Injection experiments: cumulative recall of known corruptions vs inspection budget, ranked by \|self-influence\|. |
 | `plot_influence_concentration(scores)` | "How many points carry the signal?" Lorenz-style cumulative share of \|influence\| mass. |
 | `plot_top_k_stability(replicate_scores, k=10)` | Check rank-stability across resampling replicates. Pair with the `stability_replicates(attr, ...)` util. |
-| `report(attr, X_test, y_test, ...)` | Four-panel diagnostic dashboard in one call. |
+| `report(attr, X_test, y_test, ...)` | Four-panel diagnostic dashboard in one call. Returns a bare `Figure`; per-test-point attributors only (functional attributors: use `plot_top_influencers` / `plot_disparity_curve`). |
 
 See [`examples/showcase.ipynb`](examples/showcase.ipynb) for an end-to-end walkthrough.
 
@@ -313,7 +357,8 @@ See [`examples/showcase.ipynb`](examples/showcase.ipynb) for an end-to-end walkt
   - Models fit with `class_weight` are **rejected** by `InfluenceFunctions` (the closed form assumes an unweighted objective; using it anyway silently degrades accuracy). `influence(method='auto')` falls back to a refit-based method, which honors `class_weight` by cloning the estimator.
   - Models fit with a `sample_weight` argument **cannot be detected post-hoc**; do not use `InfluenceFunctions` on them. Refit-based methods also refit *without* sample weights, so weighted fits are best avoided altogether or handled with a custom workflow.
 - **Penalties (influence functions)**: `penalty='l1'` / `'elasticnet'` logistic models are rejected (an l1 penalty contributes no curvature, so the l2 Hessian correction is wrong); `method='auto'` falls back. `solver='liblinear'` regularizes the intercept and triggers a warning (small O(1/(Cn)) bias); prefer `lbfgs`.
-- **Unsupported inputs** fail fast with clear errors: sparse matrices (densify first), multi-output `y`, multiclass classifiers (for `InfluenceFunctions`, and for refit-based methods when the classifier lacks `predict_proba`), wrapped estimators (`Pipeline`, `GridSearchCV` — pass the fitted inner estimator instead).
+- **pandas**: DataFrames and Series are accepted everywhere and converted positionally — the index is ignored (align `X` and `y` yourself, as with sklearn), and all returned indices are 0-based **positions** into the training array (use `.iloc`, or pass `df.index` via the viz `labels=` kwargs to get named output). Internal predictions suppress sklearn's spurious "X does not have valid feature names" warning.
+- **Unsupported inputs** fail fast with clear errors: sparse matrices (densify first), multi-output `y`, multiclass classifiers (for `InfluenceFunctions`, and for refit-based methods when the classifier lacks `predict_proba`), wrapped estimators (`Pipeline`, `GridSearchCV` — pass the fitted inner estimator **with correspondingly transformed features**; passing raw features to an estimator fit on transformed ones produces garbage scores, which every `fit` now guards against by warning when the model cannot beat a trivial baseline on the data it was handed).
 - **Classifier loss semantics**:
   - If a classifier exposes `predict_proba`, loss mode uses negative log-likelihood of the true class.
   - If it does not, loss mode falls back to squared error on `decision_function` values (with a warning). In that case, magnitudes are not comparable to NLL-based losses.

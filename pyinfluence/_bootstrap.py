@@ -19,7 +19,7 @@ from pyinfluence._base import (
     check_is_fitted,
 )
 from pyinfluence._utils import _value_at_test, tqdm_joblib
-from pyinfluence._validation import validate_refit_model
+from pyinfluence._validation import validate_refit_model, warn_if_data_mismatch
 
 if TYPE_CHECKING:
     from typing import Self
@@ -138,8 +138,9 @@ class BootstrapInfluence(BaseAttributor):
         Standard error of the most recent ``explain`` call's scores,
         combining the OOB and in-bag run variances
         (sqrt(var_oob/n_oob + var_in/n_in)). NaN where either side has
-        fewer than two runs. Use to judge whether a ranking is signal or
-        resampling noise.
+        fewer than two runs. Use to judge whether a ranking is signal or sampling noise given
+        this training set; for stability under training-data resampling (a
+        different question) see ``pyinfluence.stability_replicates``.
 
     Examples
     --------
@@ -186,6 +187,7 @@ class BootstrapInfluence(BaseAttributor):
         _validate_mode(self.mode)
         validate_refit_model(model)
         X, y = _prepare_fit_inputs(X, y)
+        warn_if_data_mismatch(model, X, y)
         n_train = X.shape[0]
         self.model_ = model
         self.X_train_ = X

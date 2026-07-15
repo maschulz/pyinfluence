@@ -168,6 +168,20 @@ def influence(
                 UserWarning,
             )
 
+        if not use_if and model_type == "unsupported" and not (
+            hasattr(model, "steps") or hasattr(model, "best_estimator_")
+        ):
+            warnings.warn(
+                f"InfluenceFunctions does not support "
+                f"{type(model).__name__}; method='auto' is using the "
+                f"'{fallback}' fallback. Note that model-agnostic estimators "
+                "can disagree strongly at the per-point level on non-linear "
+                "models even when each passes aggregate validation — compare "
+                "two of them (compare_attributors) and run removal_curve "
+                "before acting on individual rankings.",
+                UserWarning,
+            )
+
         if use_if:
             attributor_cls = InfluenceFunctions
             attr_kwargs = {"mode": mode, **kwargs}

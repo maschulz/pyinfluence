@@ -199,6 +199,65 @@ def supports(model: BaseEstimator) -> tuple[bool, str | None]:
     return True, None
 
 
+def warn_if_data_mismatch(model, X, y) -> None:
+    """Warn when the model can't even beat a trivial baseline on (X, y).
+
+    A fitted model scoring worse than the majority class (classifier) or the
+    mean predictor (regressor) on the very data passed to ``fit`` is the
+    signature of a preprocessing mismatch — most commonly passing *raw*
+    features to the inner estimator of a Pipeline that was fit on
+    *transformed* features. Influence scores computed from such a pairing
+    are confidently wrong, so this fails loudly instead of silently.
+    """
+    from pyinfluence._utils import _compute_loss_sklearn, _quiet_sklearn
+
+    try:
+        if is_classifier(model) and callable(
+            getattr(model, "predict_proba", None)
+        ):
+            # NLL against the predict-the-class-frequencies baseline: far
+            # more sensitive than accuracy (a mismatched model is
+            # confidently wrong, blowing up NLL even at chance accuracy).
+            y_arr = np.asarray(y).ravel()
+            mean_nll = float(
+                _compute_loss_sklearn(model, np.asarray(X), y_arr, True).mean()
+            )
+            freqs = np.unique(y_arr, return_counts=True)[1] / y_arr.size
+            prior_nll = float(-(freqs * np.log(freqs)).sum())
+            bad = mean_nll > prior_nll
+            detail = (
+                f"mean NLL {mean_nll:.3f}, predict-the-class-frequencies "
+                f"baseline {prior_nll:.3f}"
+            )
+        else:
+            with _quiet_sklearn():
+                score = model.score(X, y)
+            if is_classifier(model):
+                y_arr = np.asarray(y).ravel()
+                _, counts = np.unique(y_arr, return_counts=True)
+                baseline = counts.max() / y_arr.size
+                bad = score < baseline - 0.05
+                detail = (
+                    f"accuracy {score:.3f}, majority-class baseline "
+                    f"{baseline:.3f}"
+                )
+            else:
+                bad = score < -0.05
+                detail = f"R^2 = {score:.3f} (0 = predicting the mean)"
+    except Exception:
+        return
+    if bad:
+        warnings.warn(
+            f"The model scores worse than a trivial baseline on the data "
+            f"passed to fit() ({detail}). Influence scores computed from a "
+            "mismatched (model, X, y) triple are meaningless. Most common "
+            "cause: the model was fit on *transformed* features (e.g. inside "
+            "a Pipeline with a scaler) but fit() received the raw ones — "
+            "pass the same transformed X the estimator was trained on.",
+            UserWarning,
+        )
+
+
 def validate_refit_model(model: BaseEstimator) -> None:
     """
     Validate a model for the refit-based attributors (LOO/Banzhaf/Bootstrap).

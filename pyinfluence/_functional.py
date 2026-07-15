@@ -48,8 +48,8 @@ from tqdm import tqdm
 from pyinfluence._base import _prepare_fit_inputs, check_is_fitted
 from pyinfluence._influence import InfluenceFunctions
 from pyinfluence._linear import _augment_intercept
-from pyinfluence._utils import _compute_loss_sklearn, tqdm_joblib
-from pyinfluence._validation import check_is_fitted_model
+from pyinfluence._utils import _compute_loss_sklearn, _quiet_sklearn, tqdm_joblib
+from pyinfluence._validation import check_is_fitted_model, warn_if_data_mismatch
 
 if TYPE_CHECKING:
     from typing import Self
@@ -156,11 +156,12 @@ def _model_scores(model: BaseEstimator, X: NDArray) -> NDArray[np.floating]:
     P(Y=classes_[1] | x) for classifiers with predict_proba, decision values
     otherwise (e.g. RidgeClassifier), predictions for regressors.
     """
-    if is_classifier(model):
-        if callable(getattr(model, "predict_proba", None)):
-            return model.predict_proba(X)[:, 1]
-        return np.asarray(model.decision_function(X), dtype=float).ravel()
-    return np.asarray(model.predict(X), dtype=float).ravel()
+    with _quiet_sklearn():
+        if is_classifier(model):
+            if callable(getattr(model, "predict_proba", None)):
+                return model.predict_proba(X)[:, 1]
+            return np.asarray(model.decision_function(X), dtype=float).ravel()
+        return np.asarray(model.predict(X), dtype=float).ravel()
 
 
 def _model_values(
@@ -463,7 +464,8 @@ class FunctionalInfluence:
         base = self.base_attributor_
         model = self.model_
         if base.model_type_ == "logistic":
-            p = model.predict_proba(X_raw)[:, 1]
+            with _quiet_sklearn():
+                p = model.predict_proba(X_raw)[:, 1]
             # NLL gradient needs y as a 0/1 indicator of classes_[1] (the
             # class p refers to), not the raw label values.
             y01 = (np.asarray(y).ravel() == model.classes_[1]).astype(float)
@@ -533,6 +535,7 @@ class RefitFunctionalInfluence:
         _validate_target(self.target)
         check_is_fitted_model(model)
         X_arr, y_arr = _prepare_fit_inputs(X, y)
+        warn_if_data_mismatch(model, X_arr, y_arr)
         self.model_ = model
         self.X_train_ = X_arr
         self.y_train_ = y_arr
@@ -663,6 +666,7 @@ class SubsampledFunctionalInfluence:
             raise ValueError("subset_frac must be in (0, 1).")
         check_is_fitted_model(model)
         X_arr, y_arr = _prepare_fit_inputs(X, y)
+        warn_if_data_mismatch(model, X_arr, y_arr)
         self.model_ = model
         self.X_train_ = X_arr
         self.y_train_ = y_arr

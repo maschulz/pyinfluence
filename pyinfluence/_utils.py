@@ -18,6 +18,7 @@ ranked, averaged, or treated as zero.
 from __future__ import annotations
 
 import contextlib
+import re
 import warnings
 from typing import Literal
 
@@ -32,6 +33,22 @@ from pyinfluence._base import BaseAttributor, check_is_fitted
 # -----------------------------------------------------------------------------
 # Internal helpers (used by LOO/Banzhaf/Bootstrap and/or public utils below)
 # -----------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def _quiet_sklearn():
+    """Silence sklearn's feature-names warning for internal model calls.
+
+    pyinfluence converts inputs to ndarrays once at fit time, so every
+    internal predict/predict_proba call on a DataFrame-fitted model would
+    otherwise emit "X does not have valid feature names" — spurious here,
+    since the values are exactly the user's own rows.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message="X does not have valid feature names"
+        )
+        yield
 
 
 def _has_predict_proba(model) -> bool:
@@ -129,7 +146,8 @@ def _compute_loss_sklearn(
     """
     if is_classifier:
         if _has_predict_proba(model):
-            probs = model.predict_proba(X)
+            with _quiet_sklearn():
+                probs = model.predict_proba(X)
             true_class_probs = _true_class_values(
                 probs, y, model.classes_, missing=1e-10
             )
@@ -145,12 +163,14 @@ def _compute_loss_sklearn(
             "classifiers that use NLL.",
             UserWarning,
         )
-        decision = np.asarray(model.decision_function(X), dtype=float).ravel()
+        with _quiet_sklearn():
+            decision = np.asarray(model.decision_function(X), dtype=float).ravel()
         # Binarize y to {-1, +1} using the model's class ordering
         y_binary = np.where(y == model.classes_[1], 1.0, -1.0)
         return (y_binary - decision) ** 2
 
-    predictions = model.predict(X)
+    with _quiet_sklearn():
+        predictions = model.predict(X)
     return (y - predictions) ** 2
 
 
@@ -185,7 +205,8 @@ def _get_prediction_value(
         If the classifier has neither predict_proba nor decision_function.
     """
     if _has_predict_proba(model):
-        probs = model.predict_proba(X)
+        with _quiet_sklearn():
+            probs = model.predict_proba(X)
         return _true_class_values(probs, y, model.classes_, missing=0.0)
 
     # Fallback: decision_function
@@ -196,7 +217,8 @@ def _get_prediction_value(
         "Values represent decision boundary distance, not probabilities.",
         UserWarning,
     )
-    return np.asarray(model.decision_function(X), dtype=float).ravel()
+    with _quiet_sklearn():
+        return np.asarray(model.decision_function(X), dtype=float).ravel()
 
 
 def _value_at_test(
@@ -385,7 +407,9 @@ def self_influence(
     Parameters
     ----------
     attributor : fitted BaseAttributor
-        A fitted attributor (InfluenceFunctions or LOOInfluence).
+        A fitted attributor (InfluenceFunctions, LOOInfluence, and
+        BootstrapInfluence have fast diagonal paths; any other attributor
+        falls back to the full matrix).
     X_train : array-like, optional
         Training features. If None, uses data stored in attributor.
     y_train : array-like, optional
@@ -580,6 +604,13 @@ def find_mislabeled(
       not proven mislabeled; an unflagged record can still be corrupted.
     - Detection degrades sharply when errors are plausible (records near
       the decision boundary) rather than gross.
+
+    The 'auto' threshold (z > 2) is deliberately conservative: it flags
+    only extreme outliers, and typically catches fewer corruptions than
+    inspecting a fixed top-k of the ``self_influence`` ranking directly.
+    For triage under an inspection budget, rank by
+    ``np.abs(self_influence(attr))`` and take your budget's top-k rather
+    than relying on the flag list.
 
     Before trusting the ranking on real data, run an injection
     experiment: corrupt a known subset the way you believe your errors
@@ -828,6 +859,12 @@ def influence_by_group(
     """
     scores = np.asarray(scores)
     groups = np.asarray(groups)
+    if groups.ndim != 1:
+        raise ValueError(
+            "groups must be one-dimensional with hashable scalar labels; "
+            "for composite keys (e.g. group x outcome cells) combine them "
+            "first: [f'{a}_{y}' for a, y in zip(A, Y)]."
+        )
     if method not in ('sum', 'mean'):
         raise ValueError(f"method must be 'sum' or 'mean', got {method!r}")
 
@@ -1023,6 +1060,13 @@ def stability_replicates(
     A sample that ranks in the top-k in most replicates is a robust finding;
     one that appears once is likely noise.
 
+    This measures a *different* uncertainty than ``scores_std_`` (Banzhaf/
+    Bootstrap): ``scores_std_`` is Monte-Carlo noise of each score *given
+    the training set*, while replicates measure how the ranking shifts when
+    the training data itself is resampled. They can disagree sharply — a
+    ranking can be precise (high signal-to-noise per score) yet unstable
+    across resamples. Check both before trusting a top-k.
+
     Parameters
     ----------
     attributor : fitted BaseAttributor
@@ -1033,9 +1077,14 @@ def stability_replicates(
         Test set passed to each replicate's ``explain``. ``y_test`` is
         required in loss mode.
     n_replicates : int, default=20
-        Number of bootstrap replicates. Cost: ``n_replicates`` model refits
-        plus attributor fits (which for refit-based attributors are
-        themselves expensive).
+        Number of bootstrap replicates. Cost: ``n_replicates`` x (one model
+        refit + one full attributor fit). For refit-based attributors that
+        multiplies their internal refits — e.g. 20 replicates of a
+        50-estimator BootstrapInfluence = ~1000 model fits — and is
+        independent of the test-set size. Parallelism comes from the
+        attributor you pass in (construct it with ``n_jobs=-1``); its
+        ``verbose`` setting is likewise reused, so pass a ``verbose=0``
+        attributor to avoid one progress bar per replicate.
     random_state : int, optional
         Seed for the bootstrap resampling.
 
@@ -1068,17 +1117,35 @@ def stability_replicates(
     rng = np.random.default_rng(random_state)
     reps = np.zeros((n_replicates, n_train))
     any_nan = 0
+    # Each replicate refit can emit the same numerical warnings (e.g.
+    # near-separability); collect and re-emit each unique message once.
+    seen_warnings: dict[tuple, list] = {}
     for r in range(n_replicates):
         boot = rng.choice(n_train, size=n_train, replace=True)
-        model_r = clone(attributor.model_).fit(X_train[boot], y_train[boot])
-        attr_r = clone(attributor).fit(model_r, X_train[boot], y_train[boot])
-        scores_r = attr_r.explain(X_test, y_test)
+        with warnings.catch_warnings(record=True) as rec:
+            warnings.simplefilter("always")
+            model_r = clone(attributor.model_).fit(X_train[boot], y_train[boot])
+            attr_r = clone(attributor).fit(model_r, X_train[boot], y_train[boot])
+            scores_r = attr_r.explain(X_test, y_test)
+        for w in rec:
+            # normalize numbers so per-replicate variants of the same
+            # warning (differing counts/values) collapse to one message
+            normalized = re.sub(r"[0-9][0-9.e+-]*", "#", str(w.message))
+            key = (w.category, normalized)
+            if key not in seen_warnings:
+                seen_warnings[key] = [0, str(w.message)]
+            seen_warnings[key][0] += 1
         agg = np.sum(scores_r, axis=0) if scores_r.ndim == 2 else scores_r
         n_nan = int(np.isnan(agg).sum())
         if n_nan:
             any_nan += n_nan
             agg = np.nan_to_num(agg, nan=0.0)
         np.add.at(reps[r], boot, agg)
+    for (category, _), (count, first_message) in seen_warnings.items():
+        warnings.warn(
+            f"[{count}x across {n_replicates} replicates] {first_message}",
+            category,
+        )
     if any_nan:
         warnings.warn(
             f"stability_replicates: {any_nan} NaN replicate score(s) were "
