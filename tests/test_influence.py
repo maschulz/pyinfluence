@@ -143,7 +143,11 @@ class TestGradientsRidge:
         residuals = y_train - predictions
         expected_full_grad = -X.T @ residuals / len(y_train)
 
-        np.testing.assert_allclose(mean_grad, expected_full_grad, rtol=1e-8)
+        # The two are algebraically identical; the only difference is
+        # summation-order roundoff. The intercept component is ~0 at the fitted
+        # solution, so it sits at the 1e-16 noise floor where a bare rtol would
+        # compare pure roundoff. atol separates that noise from real signal.
+        np.testing.assert_allclose(mean_grad, expected_full_grad, rtol=1e-8, atol=1e-10)
 
 
 class TestAugmentIntercept:
