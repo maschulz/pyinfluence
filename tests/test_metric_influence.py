@@ -47,9 +47,7 @@ def clf_problem():
 def _manual_cohens_d(scores, mask):
     s1, s0 = scores[mask], scores[~mask]
     n1, n0 = len(s1), len(s0)
-    pooled = ((n1 - 1) * s1.var(ddof=1) + (n0 - 1) * s0.var(ddof=1)) / (
-        n1 + n0 - 2
-    )
+    pooled = ((n1 - 1) * s1.var(ddof=1) + (n0 - 1) * s0.var(ddof=1)) / (n1 + n0 - 2)
     return (s1.mean() - s0.mean()) / np.sqrt(pooled)
 
 
@@ -66,17 +64,13 @@ def test_cohens_d_matches_manual(clf_problem):
     F = cohens_d(a)
     assert np.isclose(F(p1), expected)
     # disparity_value routes a Functional metric through the same model scores
-    assert np.isclose(
-        disparity_value(model, Xa, a, ya, metric=F), expected
-    )
+    assert np.isclose(disparity_value(model, Xa, a, ya, metric=F), expected)
 
 
 def test_cohens_d_validation():
     # errors surface when the functional is evaluated, not when it is built
     F_too_few = cohens_d(np.array([0, 0, 1]))
-    with pytest.raises(
-        ValueError, match="at least two reference samples per group"
-    ):
+    with pytest.raises(ValueError, match="at least two reference samples per group"):
         F_too_few(np.array([1.0, 2.0, 3.0]))
 
     F_zero_var = cohens_d(np.array([0] * 5 + [1] * 5))
@@ -159,25 +153,17 @@ def test_absolute_target_scales_by_sign(clf_problem):
     model, X, y, Xa, ya, a = clf_problem
     F = cohens_d(a)
     val = disparity_value(model, Xa, a, metric=F)
-    s_signed = (
-        FunctionalInfluence(F, target="signed")
-        .fit(model, X, y)
-        .explain(Xa)
-    )
-    s_abs = (
-        FunctionalInfluence(F, target="absolute")
-        .fit(model, X, y)
-        .explain(Xa)
-    )
+    s_signed = FunctionalInfluence(F, target="signed").fit(model, X, y).explain(Xa)
+    s_abs = FunctionalInfluence(F, target="absolute").fit(model, X, y).explain(Xa)
     np.testing.assert_allclose(s_abs, np.sign(val) * s_signed)
 
 
 def test_subsampled_functional_metric(clf_problem):
     model, X, y, Xa, ya, a = clf_problem
     F = cohens_d(a)
-    sub = SubsampledFunctionalInfluence(
-        F, n_subsets=40, random_state=0, verbose=0
-    ).fit(model, X, y)
+    sub = SubsampledFunctionalInfluence(F, n_subsets=40, random_state=0, verbose=0).fit(
+        model, X, y
+    )
     s = sub.explain(Xa)
     assert s.shape == (len(y),)
     assert np.isfinite(s).any()
@@ -189,8 +175,17 @@ def test_removal_curve_functional_metric(clf_problem):
     cf = FunctionalInfluence(F, target="absolute").fit(model, X, y)
     scores = cf.explain(Xa)
     curve = disparity_removal_curve(
-        scores, model, X, y, Xa, a, y_audit=ya, metric=F,
-        fractions=np.linspace(0.0, 0.1, 3), n_random=2, random_state=0,
+        scores,
+        model,
+        X,
+        y,
+        Xa,
+        a,
+        y_audit=ya,
+        metric=F,
+        fractions=np.linspace(0.0, 0.1, 3),
+        n_random=2,
+        random_state=0,
     )
     assert np.isfinite(curve["disparity"]).all()
     assert np.isclose(

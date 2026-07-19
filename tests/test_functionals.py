@@ -42,9 +42,7 @@ def _central_fd(fn, v, y=None, eps=1e-6):
 def _manual_cohens_d(v, mask):
     s1, s0 = v[mask], v[~mask]
     n1, n0 = s1.size, s0.size
-    pooled = ((n1 - 1) * s1.var(ddof=1) + (n0 - 1) * s0.var(ddof=1)) / (
-        n1 + n0 - 2
-    )
+    pooled = ((n1 - 1) * s1.var(ddof=1) + (n0 - 1) * s0.var(ddof=1)) / (n1 + n0 - 2)
     return (s1.mean() - s0.mean()) / np.sqrt(pooled)
 
 

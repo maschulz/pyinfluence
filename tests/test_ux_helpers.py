@@ -95,9 +95,7 @@ def test_bootstrap_single_consolidated_warning(data):
     X, y = data
     model = Ridge(alpha=1.0).fit(X, y)
     # 5 runs on 40 points: some points get 0 or <3 OOB runs (seeded, stable)
-    attr = BootstrapInfluence(
-        mode="loss", n_estimators=5, random_state=0, verbose=0
-    )
+    attr = BootstrapInfluence(mode="loss", n_estimators=5, random_state=0, verbose=0)
     attr.fit(model, X, y)
     with warnings.catch_warnings(record=True) as rec:
         warnings.simplefilter("always")

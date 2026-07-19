@@ -45,9 +45,7 @@ def _quiet_sklearn():
     spurious here, since the values are exactly the user's own rows.
     """
     with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", message="X does not have valid feature names"
-        )
+        warnings.filterwarnings("ignore", message="X does not have valid feature names")
         yield
 
 
@@ -86,9 +84,7 @@ def _true_class_values(
     """
     n_samples = probs.shape[0]
     class_index = {c: i for i, c in enumerate(classes)}
-    col = np.fromiter(
-        (class_index.get(yi, -1) for yi in y), dtype=int, count=n_samples
-    )
+    col = np.fromiter((class_index.get(yi, -1) for yi in y), dtype=int, count=n_samples)
     values = np.full(n_samples, missing, dtype=float)
     found = col >= 0
     values[found] = probs[np.arange(n_samples)[found], col[found]]
@@ -104,6 +100,7 @@ def _warn_nan_scores(scores: NDArray, func_name: str, action: str) -> int:
             f"attributors produce NaN where an effect is unmeasurable); "
             f"{action}.",
             UserWarning,
+            stacklevel=2,
         )
     return n_nan
 
@@ -162,6 +159,7 @@ def _compute_loss_sklearn(
             "negative log-likelihood. Influence magnitudes will differ from "
             "classifiers that use NLL.",
             UserWarning,
+            stacklevel=2,
         )
         with _quiet_sklearn():
             decision = np.asarray(model.decision_function(X), dtype=float).ravel()
@@ -216,6 +214,7 @@ def _get_prediction_value(
         "Using decision_function() values for prediction mode. "
         "Values represent decision boundary distance, not probabilities.",
         UserWarning,
+        stacklevel=2,
     )
     with _quiet_sklearn():
         return np.asarray(model.decision_function(X), dtype=float).ravel()
@@ -287,10 +286,9 @@ def tqdm_joblib(tqdm_object: tqdm):
     >>>
     >>> items = range(100)
     >>> with tqdm_joblib(tqdm(total=len(items))) as pbar:
-    ...     results = Parallel(n_jobs=4)(
-    ...         delayed(process_item)(item) for item in items
-    ...     )
+    ...     results = Parallel(n_jobs=4)(delayed(process_item)(item) for item in items)
     """
+
     class TqdmBatchCompletionCallback(parallel.BatchCompletionCallBack):
         def __call__(self, *args, **kwargs):
             tqdm_object.update(n=self.batch_size)
@@ -423,7 +421,7 @@ def self_influence(
 
     Examples
     --------
-    >>> attr = InfluenceFunctions(damping=1e-5, mode='loss')
+    >>> attr = InfluenceFunctions(damping=1e-5, mode="loss")
     >>> attr.fit(model, X_train, y_train)
     >>> self_scores = self_influence(attr)
     >>> outlier_candidates = np.argsort(np.abs(self_scores))[::-1][:10]
@@ -447,16 +445,18 @@ def self_influence(
 
     # Fast path: the attributor knows how to produce the diagonal directly
     # (only valid for its own stored training data).
-    if X_train is None and y_train is None and hasattr(
-        attributor, "_self_influence_diag"
+    if (
+        X_train is None
+        and y_train is None
+        and hasattr(attributor, "_self_influence_diag")
     ):
         return attributor._self_influence_diag()
 
     # Use stored training data if not provided
     if X_train is None:
-        if hasattr(attributor, 'X_train_raw_'):
+        if hasattr(attributor, "X_train_raw_"):
             X_train = attributor.X_train_raw_
-        elif hasattr(attributor, 'X_train_'):
+        elif hasattr(attributor, "X_train_"):
             X_train = attributor.X_train_
         else:
             raise ValueError(
@@ -464,15 +464,15 @@ def self_influence(
             )
 
     if y_train is None:
-        if hasattr(attributor, 'y_train_'):
+        if hasattr(attributor, "y_train_"):
             y_train = attributor.y_train_
         else:
             # For prediction mode, y_train might not be needed
             pass
 
     # Check if mode requires y_train (all attributors use mode='loss' | 'prediction')
-    mode = getattr(attributor, 'mode', None)
-    if mode == 'loss' and y_train is None:
+    mode = getattr(attributor, "mode", None)
+    if mode == "loss" and y_train is None:
         raise ValueError(
             "y_train is required for loss mode but was not provided "
             "and attributor has no stored y_train_."
@@ -537,9 +537,13 @@ def influence_summary(
     if valid.size == 0:
         nanval = float("nan")
         return {
-            'mean': nanval, 'std': nanval, 'min': nanval, 'max': nanval,
-            'percentiles': {p: nanval for p in percentiles},
-            'sparsity': nanval, 'n_nan': n_nan,
+            "mean": nanval,
+            "std": nanval,
+            "min": nanval,
+            "max": nanval,
+            "percentiles": dict.fromkeys(percentiles, nanval),
+            "sparsity": nanval,
+            "n_nan": n_nan,
         }
 
     percentile_values = np.percentile(valid, percentiles)
@@ -550,19 +554,19 @@ def influence_summary(
     sparsity = n_zero / valid.size
 
     return {
-        'mean': float(np.mean(valid)),
-        'std': float(np.std(valid)),
-        'min': float(np.min(valid)),
-        'max': float(np.max(valid)),
-        'percentiles': percentile_dict,
-        'sparsity': float(sparsity),
-        'n_nan': n_nan,
+        "mean": float(np.mean(valid)),
+        "std": float(np.std(valid)),
+        "min": float(np.min(valid)),
+        "max": float(np.max(valid)),
+        "percentiles": percentile_dict,
+        "sparsity": float(sparsity),
+        "n_nan": n_nan,
     }
 
 
 def find_mislabeled(
     attributor: BaseAttributor,
-    threshold: float | Literal['auto'] = 'auto',
+    threshold: float | Literal["auto"] = "auto",
 ) -> NDArray[np.intp]:
     """
     Identify training samples that are likely mislabeled.
@@ -619,7 +623,7 @@ def find_mislabeled(
 
     Examples
     --------
-    >>> attr = InfluenceFunctions(damping=1e-5, mode='loss')
+    >>> attr = InfluenceFunctions(damping=1e-5, mode="loss")
     >>> attr.fit(model, X_train, y_train)
     >>> suspected = find_mislabeled(attr)
     >>> print(f"Suspected mislabeled samples: {suspected}")
@@ -636,20 +640,19 @@ def find_mislabeled(
     self_scores = self_influence(attributor)
     abs_scores = np.abs(self_scores)
 
-    if threshold == 'auto':
+    if threshold == "auto":
         threshold = 2.0
-    elif isinstance(
-        threshold, (int, float, np.integer, np.floating)
-    ) and threshold <= 0:
-        raise ValueError(
-            f"threshold must be positive when a number; got {threshold}."
-        )
+    elif (
+        isinstance(threshold, (int, float, np.integer, np.floating)) and threshold <= 0
+    ):
+        raise ValueError(f"threshold must be positive when a number; got {threshold}.")
 
     # NaN self-influence (failed refits) is excluded from the statistics and
     # can never be flagged; without this, one NaN silently turns the result
     # into "no mislabeled samples found".
     _warn_nan_scores(
-        abs_scores, "find_mislabeled",
+        abs_scores,
+        "find_mislabeled",
         "excluded from the z-score statistics and never flagged",
     )
 
@@ -709,8 +712,8 @@ def compare_attributors(
 
     Examples
     --------
-    >>> attr_if = InfluenceFunctions(damping=1e-5, mode='loss')
-    >>> attr_loo = LOOInfluence(mode='loss')
+    >>> attr_if = InfluenceFunctions(damping=1e-5, mode="loss")
+    >>> attr_loo = LOOInfluence(mode="loss")
     >>> comparison = compare_attributors(attr_if, attr_loo, X_test, y_test)
     >>> print(f"Pearson r: {comparison['pearson']:.3f}")
     """
@@ -736,6 +739,7 @@ def compare_attributors(
             f"compare_attributors: dropped {n_nan_dropped} score pair(s) "
             "where either attributor returned NaN.",
             UserWarning,
+            stacklevel=2,
         )
     flat1 = flat1[pair_valid]
     flat2 = flat2[pair_valid]
@@ -771,18 +775,18 @@ def compare_attributors(
         jaccard = np.mean(jaccards)
 
     return {
-        'pearson': float(pearson_r),
-        'spearman': float(spearman_r),
-        'kendall': float(kendall_tau),
-        'top_k_overlap': float(jaccard),
-        'n_nan_dropped': n_nan_dropped,
+        "pearson": float(pearson_r),
+        "spearman": float(spearman_r),
+        "kendall": float(kendall_tau),
+        "top_k_overlap": float(jaccard),
+        "n_nan_dropped": n_nan_dropped,
     }
 
 
 def aggregate_influence(
     scores: ArrayLike,
     axis: int = 0,
-    method: Literal['sum', 'mean', 'absmax'] = 'sum',
+    method: Literal["sum", "mean", "absmax"] = "sum",
 ) -> NDArray[np.floating]:
     """
     Aggregate influence scores along an axis.
@@ -810,19 +814,21 @@ def aggregate_influence(
     --------
     >>> scores = attr.explain(X_test, y_test)
     >>> # Total influence of each training sample across all test samples
-    >>> total = aggregate_influence(scores, axis=0, method='sum')
+    >>> total = aggregate_influence(scores, axis=0, method="sum")
     """
     scores = np.asarray(scores)
 
-    if method == 'sum':
+    if method == "sum":
         return np.sum(scores, axis=axis)
-    elif method == 'mean':
+    elif method == "mean":
         return np.mean(scores, axis=axis)
-    elif method == 'absmax':
+    elif method == "absmax":
         # Select value with largest absolute magnitude
         abs_scores = np.abs(scores)
         idx = np.argmax(abs_scores, axis=axis)
-        return np.take_along_axis(scores, np.expand_dims(idx, axis=axis), axis=axis).squeeze(axis=axis)
+        return np.take_along_axis(
+            scores, np.expand_dims(idx, axis=axis), axis=axis
+        ).squeeze(axis=axis)
     else:
         raise ValueError(f"method must be 'sum', 'mean', or 'absmax', got {method!r}")
 
@@ -830,7 +836,7 @@ def aggregate_influence(
 def influence_by_group(
     scores: ArrayLike,
     groups: ArrayLike,
-    method: Literal['sum', 'mean'] = 'sum',
+    method: Literal["sum", "mean"] = "sum",
 ) -> dict:
     """
     Aggregate influence scores by group membership.
@@ -853,7 +859,7 @@ def influence_by_group(
     Examples
     --------
     >>> # Influence by data source
-    >>> sources = ['web', 'survey', 'web', 'api', ...]
+    >>> sources = ["web", "survey", "web", "api", ...]
     >>> by_source = influence_by_group(scores, sources)
     >>> print(f"Web data influence: {by_source['web']:.4f}")
     """
@@ -865,7 +871,7 @@ def influence_by_group(
             "for composite keys (e.g. group x outcome cells) combine them "
             "first: [f'{a}_{y}' for a, y in zip(A, Y)]."
         )
-    if method not in ('sum', 'mean'):
+    if method not in ("sum", "mean"):
         raise ValueError(f"method must be 'sum' or 'mean', got {method!r}")
 
     # If 2D, first aggregate over test samples (same method as within-group,
@@ -880,7 +886,7 @@ def influence_by_group(
         mask = groups == group
         group_scores = scores[mask]
 
-        if method == 'sum':
+        if method == "sum":
             result[group] = float(np.sum(group_scores))
         else:
             result[group] = float(np.mean(group_scores))
@@ -956,9 +962,7 @@ def removal_curve(
     # InfluenceFunctions stores intercept-augmented X_train_ and keeps the raw
     # in X_train_raw_. Other attributors store the raw X in X_train_. Refits
     # must use the raw, un-augmented matrix.
-    X_train = np.asarray(
-        getattr(attributor, "X_train_raw_", attributor.X_train_)
-    )
+    X_train = np.asarray(getattr(attributor, "X_train_raw_", attributor.X_train_))
     y_train = np.asarray(attributor.y_train_)
     X_test = np.asarray(X_test)
     y_test = np.asarray(y_test).ravel()
@@ -977,9 +981,7 @@ def removal_curve(
 
     # NaN-scored points (failed refits) can't be ranked; keep them out of the
     # removal front in either direction.
-    _warn_nan_scores(
-        agg, "removal_curve", "ranked last (never removed first)"
-    )
+    _warn_nan_scores(agg, "removal_curve", "ranked last (never removed first)")
     valid = np.where(~np.isnan(agg))[0]
     nan_idx = np.where(np.isnan(agg))[0]
 
@@ -1098,16 +1100,14 @@ def stability_replicates(
 
     Examples
     --------
-    >>> attr = InfluenceFunctions(mode='loss').fit(model, X_train, y_train)
+    >>> attr = InfluenceFunctions(mode="loss").fit(model, X_train, y_train)
     >>> reps = stability_replicates(attr, X_test, y_test, n_replicates=12)
     >>> viz.plot_top_k_stability(reps, k=10)
     """
     from sklearn.base import clone
 
     check_is_fitted(attributor, ["model_", "X_train_", "y_train_"])
-    X_train = np.asarray(
-        getattr(attributor, "X_train_raw_", attributor.X_train_)
-    )
+    X_train = np.asarray(getattr(attributor, "X_train_raw_", attributor.X_train_))
     y_train = np.asarray(attributor.y_train_)
     X_test = np.asarray(X_test)
     if y_test is not None:
@@ -1145,11 +1145,13 @@ def stability_replicates(
         warnings.warn(
             f"[{count}x across {n_replicates} replicates] {first_message}",
             category,
+            stacklevel=2,
         )
     if any_nan:
         warnings.warn(
             f"stability_replicates: {any_nan} NaN replicate score(s) were "
             "treated as 0 for the stability count.",
             UserWarning,
+            stacklevel=2,
         )
     return reps

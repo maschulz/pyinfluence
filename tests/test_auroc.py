@@ -49,15 +49,9 @@ def test_exact_handles_ties():
 def test_closed_form_tracks_exact_refit(clf_problem):
     """Perturbation evaluation must track exact-refit ground truth closely."""
     model, X, y, Xa, ya = clf_problem
-    s_cf = (
-        FunctionalInfluence(auroc(1), damping=1e-8)
-        .fit(model, X, y)
-        .explain(Xa, ya)
-    )
+    s_cf = FunctionalInfluence(auroc(1), damping=1e-8).fit(model, X, y).explain(Xa, ya)
     s_rf = (
-        RefitFunctionalInfluence(auroc(1), verbose=0)
-        .fit(model, X, y)
-        .explain(Xa, ya)
+        RefitFunctionalInfluence(auroc(1), verbose=0).fit(model, X, y).explain(Xa, ya)
     )
     assert np.corrcoef(s_cf, s_rf)[0, 1] > 0.9
     # the estimand is quantized: exact zeros are expected and preserved

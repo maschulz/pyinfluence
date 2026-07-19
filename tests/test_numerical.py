@@ -26,8 +26,12 @@ def _condition_warnings(wlist):
 def _separability_warnings(wlist):
     """Filter to messages about separability or p(1-p)."""
     return [
-        m for m in wlist
-        if any(t in m.lower() for t in ["separable", "p(1-p)", "near-singular", "probabilities"])
+        m
+        for m in wlist
+        if any(
+            t in m.lower()
+            for t in ["separable", "p(1-p)", "near-singular", "probabilities"]
+        )
     ]
 
 
@@ -44,7 +48,9 @@ class TestConditionNumberWarning:
         model = LinearRegression().fit(X, y)
         attr = InfluenceFunctions(damping=1e-15, mode="loss")
         wlist = _fit_collect_warnings(attr, model, X, y)
-        assert len(_condition_warnings(wlist)) >= 1, "Expected warning about ill-conditioned Hessian"
+        assert len(_condition_warnings(wlist)) >= 1, (
+            "Expected warning about ill-conditioned Hessian"
+        )
 
     def test_no_warning_on_well_conditioned_hessian(self, regression_data):
         """Should not warn when Hessian is well-conditioned."""
@@ -52,7 +58,9 @@ class TestConditionNumberWarning:
         model = Ridge(alpha=1.0).fit(X_train, y_train)
         attr = InfluenceFunctions(damping=1e-5, mode="loss")
         wlist = _fit_collect_warnings(attr, model, X_train, y_train)
-        assert len(_condition_warnings(wlist)) == 0, f"Unexpected: {_condition_warnings(wlist)}"
+        assert len(_condition_warnings(wlist)) == 0, (
+            f"Unexpected: {_condition_warnings(wlist)}"
+        )
 
     def test_higher_damping_reduces_condition_number(self):
         """Increasing damping should reduce condition number and prevent warning."""
@@ -64,7 +72,9 @@ class TestConditionNumberWarning:
         model = LinearRegression().fit(X, y)
         attr = InfluenceFunctions(damping=1e-2, mode="loss")
         wlist = _fit_collect_warnings(attr, model, X, y)
-        assert len(_condition_warnings(wlist)) == 0, "Higher damping should prevent warning"
+        assert len(_condition_warnings(wlist)) == 0, (
+            "Higher damping should prevent warning"
+        )
 
     # Regularization preventing warning: same idea as test_higher_damping_reduces_condition_number; omitted.
 
@@ -81,7 +91,9 @@ class TestNearSeparableData:
         model = LogisticRegression(C=1e6, max_iter=5000).fit(X, y)
         attr = InfluenceFunctions(damping=1e-10, mode="loss")
         wlist = _fit_collect_warnings(attr, model, X, y)
-        assert len(_separability_warnings(wlist)) >= 1, "Expected warning about near-separable data"
+        assert len(_separability_warnings(wlist)) >= 1, (
+            "Expected warning about near-separable data"
+        )
 
     def test_does_not_crash_on_separable_data(self):
         """Should compute scores without crashing on separable data."""
@@ -114,7 +126,9 @@ class TestNearSeparableData:
         model = LogisticRegression(C=1.0, max_iter=1000).fit(X_train, y_train)
         attr = InfluenceFunctions(damping=1e-5, mode="loss")
         wlist = _fit_collect_warnings(attr, model, X_train, y_train)
-        assert len(_separability_warnings(wlist)) == 0, f"Unexpected: {_separability_warnings(wlist)}"
+        assert len(_separability_warnings(wlist)) == 0, (
+            f"Unexpected: {_separability_warnings(wlist)}"
+        )
 
     def test_higher_regularization_prevents_separability_issues(self):
         """Higher regularization should prevent near-separability issues."""
@@ -125,13 +139,23 @@ class TestNearSeparableData:
         model = LogisticRegression(C=0.1, max_iter=1000).fit(X, y)
         attr = InfluenceFunctions(damping=1e-5, mode="loss")
         wlist = _fit_collect_warnings(attr, model, X, y)
-        assert len(_separability_warnings(wlist)) == 0, "Regularization should prevent warning"
+        assert len(_separability_warnings(wlist)) == 0, (
+            "Regularization should prevent warning"
+        )
 
 
-@pytest.mark.parametrize("data_fixture,model_cls,kwargs", [
-    ("regression_data", Ridge, {"alpha": 1.0}),
-    ("binary_classification_data", LogisticRegression, {"C": 1.0, "max_iter": 1000}),
-], ids=["regression", "classification"])
+@pytest.mark.parametrize(
+    "data_fixture,model_cls,kwargs",
+    [
+        ("regression_data", Ridge, {"alpha": 1.0}),
+        (
+            "binary_classification_data",
+            LogisticRegression,
+            {"C": 1.0, "max_iter": 1000},
+        ),
+    ],
+    ids=["regression", "classification"],
+)
 def test_scores_are_finite(data_fixture, model_cls, kwargs, request):
     """Influence scores should be finite (no NaN or Inf) for regression and classification."""
     X_train, X_test, y_train, y_test = request.getfixturevalue(data_fixture)
@@ -160,9 +184,7 @@ def test_damping_prevents_singular_hessian():
         X_test = np.random.randn(5, n_features)
         y_test = np.random.randn(5)
         scores = attr.explain(X_test, y_test)
-    assert_influence_scores_valid(
-        scores, 5, n_samples, check_not_all_zero=False
-    )
+    assert_influence_scores_valid(scores, 5, n_samples, check_not_all_zero=False)
 
 
 def test_small_damping_warns_on_ill_conditioned():

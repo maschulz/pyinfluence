@@ -18,10 +18,38 @@ def _pair(cls_a, cls_b, fixture_name, threshold, kwargs_a=None, kwargs_b=None):
 
 # (AttributorClass_a, AttributorClass_b, fixture_name, min_correlation, kwargs_a, kwargs_b)
 CORRELATION_PAIRS = [
-    _pair(InfluenceFunctions, LOOInfluence, "fitted_ridge", 0.9, {"damping": 1e-5, "mode": "loss"}, {"mode": "loss", "n_jobs": -1}),
-    _pair(InfluenceFunctions, LOOInfluence, "fitted_logistic_binary", 0.8, {"damping": 1e-5, "mode": "loss"}, {"mode": "loss", "n_jobs": -1}),
-    _pair(InfluenceFunctions, BanzhafInfluence, "small_fitted_ridge", 0.5, {"damping": 1e-5, "mode": "loss"}, {"mode": "loss", "n_samples": 100, "random_state": 42}),
-    _pair(LOOInfluence, BanzhafInfluence, "small_fitted_ridge", 0.5, {"mode": "loss", "n_jobs": -1}, {"mode": "loss", "n_samples": 100, "random_state": 42}),
+    _pair(
+        InfluenceFunctions,
+        LOOInfluence,
+        "fitted_ridge",
+        0.9,
+        {"damping": 1e-5, "mode": "loss"},
+        {"mode": "loss", "n_jobs": -1},
+    ),
+    _pair(
+        InfluenceFunctions,
+        LOOInfluence,
+        "fitted_logistic_binary",
+        0.8,
+        {"damping": 1e-5, "mode": "loss"},
+        {"mode": "loss", "n_jobs": -1},
+    ),
+    _pair(
+        InfluenceFunctions,
+        BanzhafInfluence,
+        "small_fitted_ridge",
+        0.5,
+        {"damping": 1e-5, "mode": "loss"},
+        {"mode": "loss", "n_samples": 100, "random_state": 42},
+    ),
+    _pair(
+        LOOInfluence,
+        BanzhafInfluence,
+        "small_fitted_ridge",
+        0.5,
+        {"mode": "loss", "n_jobs": -1},
+        {"mode": "loss", "n_samples": 100, "random_state": 42},
+    ),
 ]
 
 CORRELATION_IDS = [f"{p[0].__name__}-{p[1].__name__}-{p[2]}" for p in CORRELATION_PAIRS]

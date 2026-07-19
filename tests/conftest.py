@@ -97,9 +97,7 @@ def fitted_linear_regression(regression_data):
 def fitted_logistic_binary(binary_classification_data):
     """Fitted LogisticRegression model (binary)."""
     X_train, X_test, y_train, y_test = binary_classification_data
-    model = LogisticRegression(C=1.0, random_state=42).fit(
-        X_train, y_train
-    )
+    model = LogisticRegression(C=1.0, random_state=42).fit(X_train, y_train)
     return model, X_train, y_train, X_test, y_test
 
 

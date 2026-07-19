@@ -20,7 +20,9 @@ Attribution itself is the generic engine:
 >>> from pyinfluence import FunctionalInfluence
 >>> from pyinfluence.fairness import disparity
 >>> F = disparity("eopp", sensitive_audit, target_of=model)
->>> scores = FunctionalInfluence(F, target="absolute").fit(model, X, y).explain(X_audit, y_audit)
+>>> scores = (
+...     FunctionalInfluence(F, target="absolute").fit(model, X, y).explain(X_audit, y_audit)
+... )
 
 Estimand
 --------
@@ -213,9 +215,7 @@ def disparity(
                 f"metric={metric!r} needs the positive label: pass "
                 "target_of=model (resolves classes_[1]) or pos_label=..."
             )
-        keep = (
-            _LabelEq(pos_label) if metric == "eopp" else _LabelNeq(pos_label)
-        )
+        keep = _LabelEq(pos_label) if metric == "eopp" else _LabelNeq(pos_label)
 
     func = group_gap(sensitive, keep=keep, of="scores")
     return dataclasses.replace(func, name=metric)
@@ -314,9 +314,7 @@ def disparity_value_hard(
     if callable(getattr(model, "predict_proba", None)):
         decisions = (model.predict_proba(X)[:, 1] >= threshold).astype(float)
     else:
-        decisions = (
-            np.asarray(model.decision_function(X)).ravel() >= 0
-        ).astype(float)
+        decisions = (np.asarray(model.decision_function(X)).ravel() >= 0).astype(float)
 
     if metric == "worst_group_loss":
         y01 = (y_arr == _positive_label(model)).astype(float)
@@ -360,10 +358,7 @@ def group_removal_effect(
     refit = _refit_without(model, X_arr, y_arr, idx, refit_factory)
     if refit is None:
         return float("nan")
-    return (
-        disparity_value(refit, X_audit, s_audit, y_a, metric, target)
-        - base_value
-    )
+    return disparity_value(refit, X_audit, s_audit, y_a, metric, target) - base_value
 
 
 def disparity_removal_curve(
@@ -457,9 +452,7 @@ def disparity_removal_curve(
     disp = np.empty(len(fractions))
     hard = np.empty(len(fractions))
     acc = np.empty(len(fractions))
-    rand = (
-        np.empty((len(fractions), n_random)) if n_random > 0 else None
-    )
+    rand = np.empty((len(fractions), n_random)) if n_random > 0 else None
     for i, f in enumerate(fractions):
         k = int(round(f * n))
         disp[i], hard[i], acc[i] = evaluate(order[:k])

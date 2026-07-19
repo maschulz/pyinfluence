@@ -120,9 +120,9 @@ def test_refit_explain_functional_override_matches_dedicated(small_logistic_prob
 def test_invalid_target_raises(small_logistic_problem):
     model, X, y, Xa, ya = small_logistic_problem
     with pytest.raises(ValueError, match="target"):
-        FunctionalInfluence(
-            lambda v, y: float(np.mean(v)), target="bogus"
-        ).fit(model, X, y)
+        FunctionalInfluence(lambda v, y: float(np.mean(v)), target="bogus").fit(
+            model, X, y
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -135,9 +135,7 @@ def test_hessian_identity_runs_and_differs_from_exact(small_logistic_problem):
     F = lambda v, y: float(np.mean(v))  # noqa: E731
 
     exact = FunctionalInfluence(F, hessian="exact").fit(model, X, y).explain(Xa)
-    identity = (
-        FunctionalInfluence(F, hessian="identity").fit(model, X, y).explain(Xa)
-    )
+    identity = FunctionalInfluence(F, hessian="identity").fit(model, X, y).explain(Xa)
 
     assert exact.shape == identity.shape == (len(y),)
     assert np.isfinite(identity).all()

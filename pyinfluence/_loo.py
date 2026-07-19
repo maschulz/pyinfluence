@@ -109,7 +109,7 @@ class LOOInfluence(BaseAttributor):
     --------
     >>> from sklearn.ensemble import RandomForestClassifier
     >>> model = RandomForestClassifier().fit(X_train, y_train)
-    >>> attr = LOOInfluence(mode='loss', n_jobs=-1).fit(model, X_train, y_train)
+    >>> attr = LOOInfluence(mode="loss", n_jobs=-1).fit(model, X_train, y_train)
     >>> scores = attr.explain(X_test, y_test)
 
     Notes
@@ -166,7 +166,13 @@ class LOOInfluence(BaseAttributor):
                 iterator = tqdm(iterator, desc="Fitting LOO models")
             loo_models = [_fit_loo_model(model, X, y, i) for i in iterator]
         else:
-            with tqdm_joblib(tqdm(total=n_train, desc="Fitting LOO models", disable=(self.verbose == 0))):
+            with tqdm_joblib(
+                tqdm(
+                    total=n_train,
+                    desc="Fitting LOO models",
+                    disable=(self.verbose == 0),
+                )
+            ):
                 loo_models = Parallel(n_jobs=self.n_jobs)(
                     delayed(_fit_loo_model)(model, X, y, i) for i in range(n_train)
                 )
@@ -179,7 +185,8 @@ class LOOInfluence(BaseAttributor):
                 f"{self.failed_indices_}. "
                 "This may happen due to class imbalance when removing samples. "
                 "Influence scores for these samples will be NaN.",
-                UserWarning
+                UserWarning,
+                stacklevel=2,
             )
 
         self.loo_models_ = loo_models

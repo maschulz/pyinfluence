@@ -14,9 +14,7 @@ from tests.helpers import assert_influence_scores_valid
 class TestInfluenceAuto:
     def test_ridge_uses_influence_functions(self, fitted_ridge):
         model, X_train, y_train, X_test, y_test = fitted_ridge
-        scores = influence(
-            model, X_train, y_train, X_test, y_test, method="auto"
-        )
+        scores = influence(model, X_train, y_train, X_test, y_test, method="auto")
         assert_influence_scores_valid(
             scores, X_test.shape[0], X_train.shape[0], check_not_all_zero=False
         )
@@ -79,8 +77,11 @@ class TestInfluenceAuto:
             verbose=0,
         )
         assert_influence_scores_valid(
-            scores, X_test.shape[0], X_train.shape[0],
-            check_finite=False, check_not_all_zero=False,
+            scores,
+            X_test.shape[0],
+            X_train.shape[0],
+            check_finite=False,
+            check_not_all_zero=False,
         )
 
 
@@ -88,12 +89,26 @@ class TestInfluenceAuto:
 # influence() — explicit method
 # -----------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "method,fixture_name,extra_kwargs,check_finite,check_not_all_zero",
     [
         pytest.param("loo", "fitted_ridge", {}, True, False, marks=pytest.mark.slow),
-        pytest.param("banzhaf", "small_fitted_ridge", {"n_samples": 30}, True, False, marks=pytest.mark.slow),
-        ("bootstrap", "small_fitted_ridge", {"n_estimators": 8, "verbose": 0}, False, False),
+        pytest.param(
+            "banzhaf",
+            "small_fitted_ridge",
+            {"n_samples": 30},
+            True,
+            False,
+            marks=pytest.mark.slow,
+        ),
+        (
+            "bootstrap",
+            "small_fitted_ridge",
+            {"n_estimators": 8, "verbose": 0},
+            False,
+            False,
+        ),
     ],
     ids=["loo", "banzhaf", "bootstrap"],
 )
@@ -106,8 +121,11 @@ def test_explicit_method_returns_valid_scores(
         model, X_train, y_train, X_test, y_test, method=method, **extra_kwargs
     )
     assert_influence_scores_valid(
-        scores, X_test.shape[0], X_train.shape[0],
-        check_finite=check_finite, check_not_all_zero=check_not_all_zero,
+        scores,
+        X_test.shape[0],
+        X_train.shape[0],
+        check_finite=check_finite,
+        check_not_all_zero=check_not_all_zero,
     )
 
 
@@ -164,13 +182,17 @@ def test_mode_loss_without_y_test_raises(fitted_ridge):
 
 def test_X_train_y_train_length_mismatch_raises(fitted_ridge):
     model, X_train, y_train, X_test, y_test = fitted_ridge
-    with pytest.raises(ValueError, match="X_train and y_train must have the same length"):
+    with pytest.raises(
+        ValueError, match="X_train and y_train must have the same length"
+    ):
         influence(model, X_train, y_train[: len(y_train) - 1], X_test, y_test)
 
 
 def test_X_test_y_test_length_mismatch_raises(fitted_ridge):
     model, X_train, y_train, X_test, y_test = fitted_ridge
-    with pytest.raises(ValueError, match="X_test and y_test must have the same number of samples"):
+    with pytest.raises(
+        ValueError, match="X_test and y_test must have the same number of samples"
+    ):
         influence(model, X_train, y_train, X_test, y_test[: len(y_test) - 1])
 
 
@@ -178,6 +200,10 @@ def test_unsupported_model_explicit_influence_functions_raises(fitted_sgd_classi
     model, X_train, y_train, X_test, y_test = fitted_sgd_classifier
     with pytest.raises(ValueError, match="Unsupported model type"):
         influence(
-            model, X_train, y_train, X_test, y_test,
+            model,
+            X_train,
+            y_train,
+            X_test,
+            y_test,
             method="influence_functions",
         )

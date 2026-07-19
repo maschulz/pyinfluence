@@ -59,8 +59,9 @@ def test_ridge_slope_agreement():
         return 0.5 * np.mean((yt - m.predict(Xt)) ** 2)
 
     # keep per-sample-average regularization fixed: alpha_eff = alpha * m/n
-    true = _loo_deltas(lambda m: Ridge(alpha=alpha * m / n), X, y, loss_fn,
-                       X_test, y_test)
+    true = _loo_deltas(
+        lambda m: Ridge(alpha=alpha * m / n), X, y, loss_fn, X_test, y_test
+    )
 
     slope, r = _slope_and_r(pred, true)
     assert r > 0.97, f"pearson {r:.3f} too low"
@@ -75,7 +76,9 @@ def test_logistic_slope_agreement():
     prob = 1.0 / (1.0 + np.exp(-X @ beta))
     y = (rng.uniform(size=n) < prob).astype(float)
     X_test = rng.normal(size=(150, p))
-    y_test = (rng.uniform(size=150) < 1.0 / (1.0 + np.exp(-X_test @ beta))).astype(float)
+    y_test = (rng.uniform(size=150) < 1.0 / (1.0 + np.exp(-X_test @ beta))).astype(
+        float
+    )
 
     model = LogisticRegression(C=C, max_iter=5000).fit(X, y)
     attr = InfluenceFunctions(mode="loss", damping=1e-8).fit(model, X, y)
@@ -89,7 +92,11 @@ def test_logistic_slope_agreement():
     # keep per-sample-average regularization fixed: C_eff = C * n/m
     true = _loo_deltas(
         lambda m: LogisticRegression(C=C * n / m, max_iter=5000),
-        X, y, loss_fn, X_test, y_test,
+        X,
+        y,
+        loss_fn,
+        X_test,
+        y_test,
     )
 
     slope, r = _slope_and_r(pred, true)
@@ -119,7 +126,11 @@ def test_kernel_ridge_slope_agreement():
     # per-sample; keep lambda fixed across refits scaled per sample count.
     true = _loo_deltas(
         lambda m: KernelRidge(alpha=alpha * m / n, kernel="rbf", gamma=0.2),
-        X, y, loss_fn, X_test, y_test,
+        X,
+        y,
+        loss_fn,
+        X_test,
+        y_test,
     )
 
     slope, r = _slope_and_r(pred, true)

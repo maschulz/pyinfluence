@@ -74,9 +74,13 @@ class TestBootstrapModes:
         attr.fit(model, X_train, y_train)
         scores = attr.explain(X_test)
         assert_influence_scores_valid(
-            scores, X_test.shape[0], X_train.shape[0],
-            check_finite=False, check_not_all_zero=False,
+            scores,
+            X_test.shape[0],
+            X_train.shape[0],
+            check_finite=False,
+            check_not_all_zero=False,
         )
+
 
 class TestBootstrapWithRandomForest:
     """Bootstrap with a non-linear model (typical use case)."""
@@ -95,8 +99,11 @@ class TestBootstrapWithRandomForest:
         attr.fit(rf, X_train, y_train)
         scores = attr.explain(X_test, y_test)
         assert_influence_scores_valid(
-            scores, X_test.shape[0], X_train.shape[0],
-            check_finite=False, check_not_all_zero=False,
+            scores,
+            X_test.shape[0],
+            X_train.shape[0],
+            check_finite=False,
+            check_not_all_zero=False,
         )
 
 
@@ -155,6 +162,4 @@ class TestBootstrapSelfInfluenceDiag:
 
         diag_direct = attr._self_influence_diag()
         full = attr.explain(X_train, y_train)
-        np.testing.assert_allclose(
-            diag_direct, np.diag(full), equal_nan=True
-        )
+        np.testing.assert_allclose(diag_direct, np.diag(full), equal_nan=True)

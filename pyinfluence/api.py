@@ -29,7 +29,9 @@ def influence(
     X_test: np.typing.ArrayLike,
     y_test: np.typing.ArrayLike | None = None,
     *,
-    method: Literal["auto", "influence_functions", "loo", "banzhaf", "bootstrap"] = "auto",
+    method: Literal[
+        "auto", "influence_functions", "loo", "banzhaf", "bootstrap"
+    ] = "auto",
     fallback: Literal["bootstrap", "loo", "banzhaf"] = "bootstrap",
     mode: Literal["loss", "prediction"] = "loss",
     return_attributor: bool = False,
@@ -96,7 +98,9 @@ def influence(
     >>> from sklearn.model_selection import train_test_split
     >>> from pyinfluence import influence
     >>> X, y = make_regression(n_samples=200, n_features=10, random_state=42)
-    >>> X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    >>> X_train, X_test, y_train, y_test = train_test_split(
+    ...     X, y, test_size=0.2, random_state=42
+    ... )
     >>> model = Ridge(alpha=1.0).fit(X_train, y_train)
     >>> scores = influence(model, X_train, y_train, X_test, y_test)
     >>> scores.shape
@@ -146,9 +150,9 @@ def influence(
             reason = influence_function_incompatibility(model)
             if reason is not None:
                 warnings.warn(
-                    f"method='auto' is falling back to '{fallback}' because "
-                    f"{reason}.",
+                    f"method='auto' is falling back to '{fallback}' because {reason}.",
                     UserWarning,
+                    stacklevel=2,
                 )
                 use_if = False
 
@@ -166,10 +170,13 @@ def influence(
                 "pipeline[-1] or search.best_estimator_) with correspondingly "
                 "transformed features.",
                 UserWarning,
+                stacklevel=2,
             )
 
-        if not use_if and model_type == "unsupported" and not (
-            hasattr(model, "steps") or hasattr(model, "best_estimator_")
+        if (
+            not use_if
+            and model_type == "unsupported"
+            and not (hasattr(model, "steps") or hasattr(model, "best_estimator_"))
         ):
             warnings.warn(
                 f"InfluenceFunctions does not support "
@@ -180,6 +187,7 @@ def influence(
                 "two of them (compare_attributors) and run removal_curve "
                 "before acting on individual rankings.",
                 UserWarning,
+                stacklevel=2,
             )
 
         if use_if:

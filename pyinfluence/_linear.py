@@ -254,6 +254,7 @@ def _hessian_logistic(
             "This can cause numerical instability in influence estimates. "
             "Consider increasing regularization (lower C) or damping.",
             UserWarning,
+            stacklevel=2,
         )
 
     # Regularization diagonal: lambda on features, 0 on intercept
@@ -330,6 +331,7 @@ def _invert_hessian(H: NDArray[np.floating]) -> NDArray[np.floating]:
             "Influence estimates may be unstable. "
             "Consider increasing damping or regularization.",
             UserWarning,
+            stacklevel=2,
         )
 
     p = H.shape[0]

@@ -17,25 +17,52 @@ from pyinfluence import (
 # Registry: (attributor_cls, init_kwargs). get_params() must contain init_kwargs.
 SKLEARN_ATTRIBUTORS = [
     (InfluenceFunctions, {"mode": "prediction", "damping": 1e-4}),
-    (LOOInfluence, {"mode": "loss", "n_jobs": 1}),  # n_jobs=1 avoids parallel spawn in tests
+    (
+        LOOInfluence,
+        {"mode": "loss", "n_jobs": 1},
+    ),  # n_jobs=1 avoids parallel spawn in tests
     (BootstrapInfluence, {"mode": "loss", "n_estimators": 20}),
     (BanzhafInfluence, {"mode": "loss", "n_samples": 30}),
 ]
 
 # (cls, init_kwargs, set_kwargs): after set_params(**set_kwargs), get_params() contains set_kwargs.
 SKLEARN_SET_PARAMS = [
-    (InfluenceFunctions, {"mode": "loss", "damping": 1e-5}, {"damping": 1e-3, "mode": "prediction"}),
+    (
+        InfluenceFunctions,
+        {"mode": "loss", "damping": 1e-5},
+        {"damping": 1e-3, "mode": "prediction"},
+    ),
     (LOOInfluence, {"mode": "loss", "n_jobs": 1}, {"mode": "prediction", "n_jobs": 1}),
-    (BootstrapInfluence, {"mode": "loss", "n_estimators": 50}, {"mode": "prediction", "n_estimators": 30}),
-    (BanzhafInfluence, {"mode": "loss", "n_samples": 20}, {"mode": "prediction", "n_samples": 50}),
+    (
+        BootstrapInfluence,
+        {"mode": "loss", "n_estimators": 50},
+        {"mode": "prediction", "n_estimators": 30},
+    ),
+    (
+        BanzhafInfluence,
+        {"mode": "loss", "n_samples": 20},
+        {"mode": "prediction", "n_samples": 50},
+    ),
 ]
 
 # (cls, init_kwargs, substrings that must appear in repr)
 SKLEARN_REPR = [
-    (InfluenceFunctions, {"mode": "prediction", "damping": 1e-4}, ["InfluenceFunctions", "damping", "mode"]),
+    (
+        InfluenceFunctions,
+        {"mode": "prediction", "damping": 1e-4},
+        ["InfluenceFunctions", "damping", "mode"],
+    ),
     (LOOInfluence, {"mode": "prediction", "n_jobs": 4}, ["LOOInfluence", "n_jobs"]),
-    (BootstrapInfluence, {"mode": "prediction", "n_estimators": 30}, ["BootstrapInfluence", "n_estimators"]),
-    (BanzhafInfluence, {"mode": "loss", "n_samples": 20}, ["BanzhafInfluence", "n_samples"]),
+    (
+        BootstrapInfluence,
+        {"mode": "prediction", "n_estimators": 30},
+        ["BootstrapInfluence", "n_estimators"],
+    ),
+    (
+        BanzhafInfluence,
+        {"mode": "loss", "n_samples": 20},
+        ["BanzhafInfluence", "n_samples"],
+    ),
 ]
 
 # (cls, fit_kwargs): mode='invalid_mode' + extra kwargs for fit. Raises ValueError on fit.

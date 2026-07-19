@@ -94,9 +94,7 @@ class BaseAttributor(BaseEstimator, ABC):
 def _validate_mode(mode: str) -> None:
     """Raise ValueError if mode is not 'loss' or 'prediction'."""
     if mode not in ("loss", "prediction"):
-        raise ValueError(
-            f"Invalid mode '{mode}'. Must be 'loss' or 'prediction'."
-        )
+        raise ValueError(f"Invalid mode '{mode}'. Must be 'loss' or 'prediction'.")
 
 
 def _reject_sparse(X, name: str) -> None:
@@ -112,7 +110,9 @@ def _reject_sparse(X, name: str) -> None:
         )
 
 
-def _prepare_fit_inputs(X: ArrayLike, y: ArrayLike) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+def _prepare_fit_inputs(
+    X: ArrayLike, y: ArrayLike
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
     """Convert X and y to numpy arrays; y is raveled. For use in fit().
 
     Rejects sparse X and multi-output y with clear errors.

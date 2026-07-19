@@ -103,9 +103,7 @@ def _compute_marginal_contribution(
     except Exception:
         return None
 
-    val_without = _value_at_test(
-        model_without, X_test, y_test, mode, is_classifier_
-    )
+    val_without = _value_at_test(model_without, X_test, y_test, mode, is_classifier_)
     val_with = _value_at_test(model_with, X_test, y_test, mode, is_classifier_)
     # Loss: marginal = loss(without) - loss(with). Prediction: val(with) - val(without)
     if mode == "loss":
@@ -263,7 +261,7 @@ class BanzhafInfluence(BaseAttributor):
     --------
     >>> from sklearn.linear_model import Ridge
     >>> model = Ridge().fit(X_train, y_train)
-    >>> banzhaf = BanzhafInfluence(mode='loss', n_samples=500, n_jobs=-1, random_state=42)
+    >>> banzhaf = BanzhafInfluence(mode="loss", n_samples=500, n_jobs=-1, random_state=42)
     >>> banzhaf.fit(model, X_train, y_train)
     >>> scores = banzhaf.explain(X_test, y_test)
 
@@ -408,7 +406,11 @@ class BanzhafInfluence(BaseAttributor):
         else:
             # Parallel execution with optional progress bar
             with tqdm_joblib(
-                tqdm(total=n_train, desc="Computing Banzhaf influence", disable=(self.verbose == 0))
+                tqdm(
+                    total=n_train,
+                    desc="Computing Banzhaf influence",
+                    disable=(self.verbose == 0),
+                )
             ):
                 results = Parallel(n_jobs=self.n_jobs)(
                     delayed(_process_sample_batch)(
@@ -439,12 +441,10 @@ class BanzhafInfluence(BaseAttributor):
             scores[:, idx] = mean
             if valid_count >= 2:
                 # Standard error of the Monte Carlo mean
-                sample_var = (
-                    marginal_sq_sum - valid_count * mean**2
-                ) / (valid_count - 1)
-                scores_std[:, idx] = np.sqrt(
-                    np.maximum(sample_var, 0.0) / valid_count
+                sample_var = (marginal_sq_sum - valid_count * mean**2) / (
+                    valid_count - 1
                 )
+                scores_std[:, idx] = np.sqrt(np.maximum(sample_var, 0.0) / valid_count)
         if unmeasured:
             warnings.warn(
                 f"All {self.n_samples} subset refits failed for "
@@ -452,6 +452,7 @@ class BanzhafInfluence(BaseAttributor):
                 "without the point is single-class); their scores are NaN: "
                 f"{unmeasured[:10]}{'...' if len(unmeasured) > 10 else ''}",
                 UserWarning,
+                stacklevel=2,
             )
         self.scores_std_ = scores_std
 

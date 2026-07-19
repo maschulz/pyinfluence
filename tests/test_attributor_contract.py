@@ -22,6 +22,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from sklearn.base import clone
+from sklearn.exceptions import NotFittedError
 from sklearn.metrics import log_loss, mean_squared_error
 
 from pyinfluence import (
@@ -33,7 +34,9 @@ from pyinfluence import (
 from tests.helpers import assert_influence_scores_valid
 
 
-def _contract_entry(cls, fixture_name, kwargs, check_finite=True, check_not_all_zero=True):
+def _contract_entry(
+    cls, fixture_name, kwargs, check_finite=True, check_not_all_zero=True
+):
     return (cls, fixture_name, kwargs, check_finite, check_not_all_zero)
 
 
@@ -45,17 +48,43 @@ def _slow(entry_tuple):
 # (attributor_class, fixture_name, attr_kwargs, check_finite, check_not_all_zero)
 # Bootstrap uses check_finite=False because OOB can produce NaNs.
 CONTRACT_REGISTRY = [
-    _contract_entry(InfluenceFunctions, "fitted_ridge", {"mode": "loss", "damping": 1e-5}),
-    _contract_entry(InfluenceFunctions, "fitted_linear_regression", {"mode": "loss", "damping": 1e-5}),
-    _contract_entry(InfluenceFunctions, "fitted_logistic_binary", {"mode": "loss", "damping": 1e-5}),
-    _contract_entry(InfluenceFunctions, "fitted_ridge_cv", {"mode": "loss", "damping": 1e-5}),
-    _contract_entry(InfluenceFunctions, "fitted_logistic_cv", {"mode": "loss", "damping": 1e-5}),
-    _contract_entry(InfluenceFunctions, "fitted_ridge_classifier", {"mode": "loss", "damping": 1e-5}),
-    _contract_entry(InfluenceFunctions, "fitted_ridge_classifier_cv", {"mode": "loss", "damping": 1e-5}),
-    _contract_entry(InfluenceFunctions, "fitted_kernel_ridge", {"mode": "loss", "damping": 1e-5}),
+    _contract_entry(
+        InfluenceFunctions, "fitted_ridge", {"mode": "loss", "damping": 1e-5}
+    ),
+    _contract_entry(
+        InfluenceFunctions,
+        "fitted_linear_regression",
+        {"mode": "loss", "damping": 1e-5},
+    ),
+    _contract_entry(
+        InfluenceFunctions, "fitted_logistic_binary", {"mode": "loss", "damping": 1e-5}
+    ),
+    _contract_entry(
+        InfluenceFunctions, "fitted_ridge_cv", {"mode": "loss", "damping": 1e-5}
+    ),
+    _contract_entry(
+        InfluenceFunctions, "fitted_logistic_cv", {"mode": "loss", "damping": 1e-5}
+    ),
+    _contract_entry(
+        InfluenceFunctions, "fitted_ridge_classifier", {"mode": "loss", "damping": 1e-5}
+    ),
+    _contract_entry(
+        InfluenceFunctions,
+        "fitted_ridge_classifier_cv",
+        {"mode": "loss", "damping": 1e-5},
+    ),
+    _contract_entry(
+        InfluenceFunctions, "fitted_kernel_ridge", {"mode": "loss", "damping": 1e-5}
+    ),
     _slow(_contract_entry(LOOInfluence, "fitted_ridge", {"mode": "loss"})),
     _slow(_contract_entry(LOOInfluence, "fitted_logistic_binary", {"mode": "loss"})),
-    _slow(_contract_entry(BanzhafInfluence, "small_fitted_ridge", {"mode": "loss", "n_samples": 30, "random_state": 42})),
+    _slow(
+        _contract_entry(
+            BanzhafInfluence,
+            "small_fitted_ridge",
+            {"mode": "loss", "n_samples": 30, "random_state": 42},
+        )
+    ),
     _contract_entry(
         BootstrapInfluence,
         "small_fitted_ridge",
@@ -64,6 +93,7 @@ CONTRACT_REGISTRY = [
         check_not_all_zero=False,
     ),
 ]
+
 
 def _unpack_entry(entry):
     """Unwrap pytest.param(entry) or return entry. Use in parametrized contract tests."""
@@ -85,14 +115,47 @@ def _sign_entry(cls, fixture_name, kwargs, is_classifier=False):
 # Sign sanity: remove helpful → loss increases; remove harmful → loss decreases.
 # Banzhaf/Bootstrap need enough samples/estimators so "most harmful" is stable.
 SIGN_REGISTRY = [
-    _sign_entry(InfluenceFunctions, "fitted_ridge", {"mode": "loss", "damping": 1e-5}, False),
-    _sign_entry(InfluenceFunctions, "fitted_logistic_binary", {"mode": "loss", "damping": 1e-5}, True),
-    _sign_entry(InfluenceFunctions, "fitted_ridge_cv", {"mode": "loss", "damping": 1e-5}, False),
-    _sign_entry(InfluenceFunctions, "fitted_ridge_classifier", {"mode": "loss", "damping": 1e-5}, True),
-    _sign_entry(InfluenceFunctions, "fitted_kernel_ridge", {"mode": "loss", "damping": 1e-5}, False),
+    _sign_entry(
+        InfluenceFunctions, "fitted_ridge", {"mode": "loss", "damping": 1e-5}, False
+    ),
+    _sign_entry(
+        InfluenceFunctions,
+        "fitted_logistic_binary",
+        {"mode": "loss", "damping": 1e-5},
+        True,
+    ),
+    _sign_entry(
+        InfluenceFunctions, "fitted_ridge_cv", {"mode": "loss", "damping": 1e-5}, False
+    ),
+    _sign_entry(
+        InfluenceFunctions,
+        "fitted_ridge_classifier",
+        {"mode": "loss", "damping": 1e-5},
+        True,
+    ),
+    _sign_entry(
+        InfluenceFunctions,
+        "fitted_kernel_ridge",
+        {"mode": "loss", "damping": 1e-5},
+        False,
+    ),
     _slow(_sign_entry(LOOInfluence, "fitted_ridge", {"mode": "loss"}, False)),
-    _slow(_sign_entry(BanzhafInfluence, "small_fitted_ridge", {"mode": "loss", "n_samples": 150, "random_state": 42}, False)),
-    _slow(_sign_entry(BootstrapInfluence, "fitted_ridge", {"mode": "loss", "n_estimators": 500, "random_state": 42, "verbose": 0}, False)),
+    _slow(
+        _sign_entry(
+            BanzhafInfluence,
+            "small_fitted_ridge",
+            {"mode": "loss", "n_samples": 150, "random_state": 42},
+            False,
+        )
+    ),
+    _slow(
+        _sign_entry(
+            BootstrapInfluence,
+            "fitted_ridge",
+            {"mode": "loss", "n_estimators": 500, "random_state": 42, "verbose": 0},
+            False,
+        )
+    ),
 ]
 
 SIGN_IDS = [_entry_id(e) for e in SIGN_REGISTRY]
@@ -102,23 +165,53 @@ SIGN_IDS = [_entry_id(e) for e in SIGN_REGISTRY]
 PREDICTION_REGRESSION_REGISTRY = [
     (InfluenceFunctions, "fitted_ridge", {"mode": "prediction", "damping": 1e-5}),
     (InfluenceFunctions, "fitted_ridge_cv", {"mode": "prediction", "damping": 1e-5}),
-    (InfluenceFunctions, "fitted_kernel_ridge", {"mode": "prediction", "damping": 1e-5}),
+    (
+        InfluenceFunctions,
+        "fitted_kernel_ridge",
+        {"mode": "prediction", "damping": 1e-5},
+    ),
     _slow((LOOInfluence, "fitted_ridge", {"mode": "prediction"})),
-    _slow((BanzhafInfluence, "small_fitted_ridge", {"mode": "prediction", "n_samples": 30, "random_state": 42})),
-    (BootstrapInfluence, "small_fitted_ridge", {"mode": "prediction", "n_estimators": 8, "random_state": 42, "verbose": 0}),
+    _slow(
+        (
+            BanzhafInfluence,
+            "small_fitted_ridge",
+            {"mode": "prediction", "n_samples": 30, "random_state": 42},
+        )
+    ),
+    (
+        BootstrapInfluence,
+        "small_fitted_ridge",
+        {"mode": "prediction", "n_estimators": 8, "random_state": 42, "verbose": 0},
+    ),
 ]
 
 # (cls, fixture_name, kwargs) with mode="prediction" and classification fixture.
 # LOO, Banzhaf, Bootstrap require y_test for prediction+classifier; InfluenceFunctions does not.
 PREDICTION_CLASSIFICATION_REGISTRY = [
     _slow((LOOInfluence, "fitted_logistic_binary", {"mode": "prediction"})),
-    _slow((BanzhafInfluence, "fitted_logistic_binary", {"mode": "prediction", "n_samples": 30, "random_state": 42})),
-    (BootstrapInfluence, "fitted_logistic_binary", {"mode": "prediction", "n_estimators": 8, "random_state": 42, "verbose": 0}),
+    _slow(
+        (
+            BanzhafInfluence,
+            "fitted_logistic_binary",
+            {"mode": "prediction", "n_samples": 30, "random_state": 42},
+        )
+    ),
+    (
+        BootstrapInfluence,
+        "fitted_logistic_binary",
+        {"mode": "prediction", "n_estimators": 8, "random_state": 42, "verbose": 0},
+    ),
 ]
+
+
 def _pred_class_id(entry):
     t = _unpack_entry(entry)
     return f"{t[0].__name__}-{t[1]}"
-PREDICTION_CLASSIFICATION_IDS = [_pred_class_id(e) for e in PREDICTION_CLASSIFICATION_REGISTRY]
+
+
+PREDICTION_CLASSIFICATION_IDS = [
+    _pred_class_id(e) for e in PREDICTION_CLASSIFICATION_REGISTRY
+]
 
 PREDICTION_REGRESSION_IDS = [_pred_class_id(e) for e in PREDICTION_REGRESSION_REGISTRY]
 
@@ -152,7 +245,7 @@ def test_not_fitted_raises(entry, request):
     cls, fixture_name, kwargs, _cf, _cz = _unpack_entry(entry)
     _, X_train, y_train, X_test, y_test = request.getfixturevalue(fixture_name)
     attr = cls(**kwargs)
-    with pytest.raises(Exception):  # NotFittedError or ValueError
+    with pytest.raises((NotFittedError, ValueError)):
         attr.explain(X_test, y_test)
 
 
@@ -167,7 +260,9 @@ def test_loss_mode_requires_y_test(entry, request):
         attr.explain(X_test)
 
 
-@pytest.mark.parametrize("entry", PREDICTION_CLASSIFICATION_REGISTRY, ids=PREDICTION_CLASSIFICATION_IDS)
+@pytest.mark.parametrize(
+    "entry", PREDICTION_CLASSIFICATION_REGISTRY, ids=PREDICTION_CLASSIFICATION_IDS
+)
 def test_prediction_mode_classifier_requires_y_test(entry, request):
     """With mode='prediction' and a classifier, explain() must require y_test."""
     cls, fixture_name, kwargs = _unpack_entry(entry)
@@ -178,7 +273,9 @@ def test_prediction_mode_classifier_requires_y_test(entry, request):
         attr.explain(X_test)
 
 
-@pytest.mark.parametrize("entry", PREDICTION_REGRESSION_REGISTRY, ids=PREDICTION_REGRESSION_IDS)
+@pytest.mark.parametrize(
+    "entry", PREDICTION_REGRESSION_REGISTRY, ids=PREDICTION_REGRESSION_IDS
+)
 def test_prediction_mode_regression_does_not_require_y_test(entry, request):
     """With mode='prediction' and regression, explain(X_test) without y_test must return (n_test, n_train)."""
     cls, fixture_name, kwargs = _unpack_entry(entry)
@@ -198,7 +295,9 @@ def test_scores_valid(entry, request):
     attr.fit(model, X_train, y_train)
     scores = attr.explain(X_test, y_test)
     assert_influence_scores_valid(
-        scores, X_test.shape[0], X_train.shape[0],
+        scores,
+        X_test.shape[0],
+        X_train.shape[0],
         check_finite=check_finite,
         check_not_all_zero=check_not_all_zero,
     )

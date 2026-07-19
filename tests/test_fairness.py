@@ -143,7 +143,9 @@ def test_absolute_target_matches_refit(biased_logistic):
     attr.fit(model, Xtr, ytr)
     pred = attr.explain(Xau)
     exact = RefitFunctionalInfluence(
-        F, target="absolute", verbose=0,
+        F,
+        target="absolute",
+        verbose=0,
         refit_factory=lambda m: LogisticRegression(C=1.0 * n / m, max_iter=5000),
     )
     exact.fit(model, Xtr, ytr)
@@ -171,7 +173,8 @@ def test_ridge_regression_mean_pred_gap():
     pred = attr.explain(Xau)
 
     exact = RefitFunctionalInfluence(
-        F, verbose=0,
+        F,
+        verbose=0,
         refit_factory=lambda m: Ridge(alpha=alpha * m / n),
     )
     exact.fit(model, Xtr, ytr)
@@ -223,7 +226,12 @@ def test_group_removal_effect_matches_sum_for_small_groups(biased_logistic):
     pred = attr.explain(Xau)
     idx = np.argsort(-pred)[:5]
     actual = group_removal_effect(
-        model, Xtr, ytr, idx, Xau, aau,
+        model,
+        Xtr,
+        ytr,
+        idx,
+        Xau,
+        aau,
         refit_factory=lambda m: LogisticRegression(C=1.0 * n / m, max_iter=5000),
     )
     predicted_sum = pred[idx].sum()
@@ -240,9 +248,18 @@ def test_disparity_removal_curve_reduces_gap(biased_logistic):
     attr.fit(model, Xtr, ytr)
     scores = attr.explain(Xau)
     curve = disparity_removal_curve(
-        scores, model, Xtr, ytr, Xau, aau, y_audit=yau,
-        metric="dp", target="absolute",
-        fractions=np.array([0.0, 0.05, 0.10]), n_random=3, random_state=0,
+        scores,
+        model,
+        Xtr,
+        ytr,
+        Xau,
+        aau,
+        y_audit=yau,
+        metric="dp",
+        target="absolute",
+        fractions=np.array([0.0, 0.05, 0.10]),
+        n_random=3,
+        random_state=0,
     )
     # removing the most gap-increasing points should shrink |gap| vs baseline
     assert curve["disparity"][-1] < curve["base_disparity"]
@@ -302,13 +319,19 @@ def test_disparity_removal_curve_base_disparity_is_full_model_value(biased_logis
     scores = attr.explain(Xau)
 
     curve = disparity_removal_curve(
-        scores, model, Xtr, ytr, Xau, aau, y_audit=yau,
-        metric="dp", target="absolute",
-        fractions=[0.1], n_random=0,
+        scores,
+        model,
+        Xtr,
+        ytr,
+        Xau,
+        aau,
+        y_audit=yau,
+        metric="dp",
+        target="absolute",
+        fractions=[0.1],
+        n_random=0,
     )
-    expected = disparity_value(
-        model, Xau, aau, y=yau, metric="dp", target="absolute"
-    )
+    expected = disparity_value(model, Xau, aau, y=yau, metric="dp", target="absolute")
     assert curve["base_disparity"] == pytest.approx(expected)
     assert curve["base_disparity"] != pytest.approx(curve["disparity"][0])
 
@@ -331,19 +354,19 @@ def test_refit_explain_functional_override_matches_dedicated_attributor(
     F_eopp = disparity("eopp", aau, target_of=model)
 
     attr = RefitFunctionalInfluence(
-        F_dp, verbose=0,
+        F_dp,
+        verbose=0,
         refit_factory=lambda m: LogisticRegression(C=1.0 * n / m, max_iter=5000),
     )
     attr.fit(model, Xtr, ytr)
     override_scores = attr.explain(Xau, yau, functional=F_eopp)
 
     dedicated = RefitFunctionalInfluence(
-        F_eopp, verbose=0,
+        F_eopp,
+        verbose=0,
         refit_factory=lambda m: LogisticRegression(C=1.0 * n / m, max_iter=5000),
     )
     dedicated.fit(model, Xtr, ytr)
     dedicated_scores = dedicated.explain(Xau, yau)
 
-    np.testing.assert_allclose(
-        override_scores, dedicated_scores, equal_nan=True
-    )
+    np.testing.assert_allclose(override_scores, dedicated_scores, equal_nan=True)

@@ -40,10 +40,12 @@ def clf_data():
 def test_mismatch_guard_warns_on_raw_features(clf_data):
     """Inner estimator of a scaler pipeline + raw features must warn."""
     X, y = clf_data
-    pipe = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(max_iter=1000)),
-    ]).fit(X, y)
+    pipe = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            ("clf", LogisticRegression(max_iter=1000)),
+        ]
+    ).fit(X, y)
     inner = pipe.named_steps["clf"]
     with pytest.warns(UserWarning, match="trivial baseline"):
         InfluenceFunctions(mode="loss").fit(inner, X, y)
@@ -142,8 +144,15 @@ def test_auto_fallback_unsupported_type_warns():
     model = DecisionTreeClassifier(max_depth=3, random_state=0).fit(X, y)
     with pytest.warns(UserWarning, match="fallback"):
         influence(
-            model, X, y, X[:5], y[:5], method="auto",
-            n_estimators=8, random_state=0, verbose=0,
+            model,
+            X,
+            y,
+            X[:5],
+            y[:5],
+            method="auto",
+            n_estimators=8,
+            random_state=0,
+            verbose=0,
         )
 
 

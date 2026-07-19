@@ -63,7 +63,14 @@ def _make_fairness_data(n=200, p=5, seed=1):
 def fairness_encoding_data():
     X, y01, a = _make_fairness_data()
     n_train = 140
-    return X[:n_train], y01[:n_train], a[:n_train], X[n_train:], y01[n_train:], a[n_train:]
+    return (
+        X[:n_train],
+        y01[:n_train],
+        a[:n_train],
+        X[n_train:],
+        y01[n_train:],
+        a[n_train:],
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -94,7 +101,10 @@ class TestInfluenceFunctionsLabelEncodings:
                 base_scores = scores
             else:
                 np.testing.assert_allclose(
-                    scores, base_scores, rtol=1e-8, atol=1e-10,
+                    scores,
+                    base_scores,
+                    rtol=1e-8,
+                    atol=1e-10,
                     err_msg=f"LogisticRegression encoding {name!r} mismatch (mode={mode})",
                 )
 
@@ -118,7 +128,10 @@ class TestInfluenceFunctionsLabelEncodings:
                 base_scores = scores
             else:
                 np.testing.assert_allclose(
-                    scores, base_scores, rtol=1e-8, atol=1e-10,
+                    scores,
+                    base_scores,
+                    rtol=1e-8,
+                    atol=1e-10,
                     err_msg=f"RidgeClassifier encoding {name!r} mismatch (mode={mode})",
                 )
 
@@ -183,7 +196,10 @@ class TestFairnessLabelEncodings:
                 base = scores
             else:
                 np.testing.assert_allclose(
-                    scores, base, rtol=1e-6, atol=1e-9,
+                    scores,
+                    base,
+                    rtol=1e-6,
+                    atol=1e-9,
                     err_msg=f"metric={metric!r} encoding {name!r} mismatch",
                 )
 
@@ -206,9 +222,7 @@ class TestFairnessLabelEncodings:
             ("fpr", y12_test != model.classes_[1]),
         ]:
             value = disparity_value(model, X_test, a_test, y=y12_test, metric=metric)
-            gap_manual = (
-                probs[cond & mask_a1].mean() - probs[cond & ~mask_a1].mean()
-            )
+            gap_manual = probs[cond & mask_a1].mean() - probs[cond & ~mask_a1].mean()
             assert value == pytest.approx(gap_manual)
 
     def test_disparity_value_hard_worst_group_loss_matches_manual_for_pm1_encoding(

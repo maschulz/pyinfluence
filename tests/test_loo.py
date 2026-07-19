@@ -47,6 +47,7 @@ class TestLOOInfluenceParallel:
 
         np.testing.assert_allclose(scores_seq, scores_par, rtol=1e-10)
 
+
 class TestLOOInfluenceEdgeCases:
     """Tests for edge cases and error handling."""
 
@@ -78,9 +79,7 @@ class TestLOOInfluenceEdgeCases:
         scores = loo.explain(X_test, y_test)
 
         # Score for sample 0 (the only minority class sample) should be NaN
-        assert np.isnan(scores[:, 0]).all(), (
-            "Failed refits should produce NaN scores"
-        )
+        assert np.isnan(scores[:, 0]).all(), "Failed refits should produce NaN scores"
 
         # Other scores should be finite
         successful_mask = ~np.isnan(scores[0, :])
@@ -101,10 +100,15 @@ class TestLOOInfluenceEdgeCases:
         scores = loo.explain(X_test, y_test)
         assert_influence_scores_valid(scores, X_test.shape[0], X_train.shape[0])
 
-@pytest.mark.parametrize("fitted_fixture,is_regression", [
-    ("fitted_logistic_binary", False),
-    ("fitted_ridge", True),
-], ids=["classification", "regression"])
+
+@pytest.mark.parametrize(
+    "fitted_fixture,is_regression",
+    [
+        ("fitted_logistic_binary", False),
+        ("fitted_ridge", True),
+    ],
+    ids=["classification", "regression"],
+)
 def test_prediction_method(fitted_fixture, is_regression, request):
     """Prediction mode: classification requires y_test; regression can omit it. Regression column j = baseline - loo_pred."""
     model, X_train, y_train, X_test, y_test = request.getfixturevalue(fitted_fixture)

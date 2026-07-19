@@ -43,10 +43,12 @@ def test_top_influential_nan_excluded_from_both_rankings():
 
 
 def test_top_influential_nan_excluded_2d():
-    scores = np.array([
-        [0.5, np.nan, 0.8, -0.1, 0.2],
-        [-0.1, 0.9, np.nan, 0.3, -0.5],
-    ])
+    scores = np.array(
+        [
+            [0.5, np.nan, 0.8, -0.1, 0.2],
+            [-0.1, 0.9, np.nan, 0.3, -0.5],
+        ]
+    )
     with pytest.warns(UserWarning, match="NaN"):
         helpful, harmful = top_influential(scores, k=2)
 
@@ -147,14 +149,18 @@ class _FixedScoresAttributor(BaseAttributor):
 
 
 def test_compare_attributors_drops_nan_pairs_and_reports_count():
-    scores1 = np.array([
-        [1.0, 2.0, np.nan, 4.0, 5.0],
-        [6.0, 7.0, 8.0, 9.0, 10.0],
-    ])
-    scores2 = np.array([
-        [1.1, 2.1, 3.1, 4.1, 5.1],
-        [6.1, 7.1, 8.1, np.nan, 10.1],
-    ])
+    scores1 = np.array(
+        [
+            [1.0, 2.0, np.nan, 4.0, 5.0],
+            [6.0, 7.0, 8.0, 9.0, 10.0],
+        ]
+    )
+    scores2 = np.array(
+        [
+            [1.1, 2.1, 3.1, 4.1, 5.1],
+            [6.1, 7.1, 8.1, np.nan, 10.1],
+        ]
+    )
     attr1 = _FixedScoresAttributor(scores1)
     attr2 = _FixedScoresAttributor(scores2)
 
@@ -206,14 +212,10 @@ def test_removal_curve_never_removes_nan_scored_points_first(small_fitted_ridge)
     frac = n_remove / n_train
 
     with pytest.warns(UserWarning, match="NaN"):
-        result = removal_curve(
-            attr, X_test, y_test, fractions=[0.0, frac], n_random=0
-        )
+        result = removal_curve(attr, X_test, y_test, fractions=[0.0, frac], n_random=0)
 
     # Expected removal set: the n_remove smallest-scored *finite* points.
-    finite_idx = np.array(
-        [i for i in range(n_train) if i not in nan_positions]
-    )
+    finite_idx = np.array([i for i in range(n_train) if i not in nan_positions])
     expected_remove = finite_idx[np.argsort(scores[finite_idx])[:n_remove]]
     assert not set(expected_remove) & set(nan_positions)
 

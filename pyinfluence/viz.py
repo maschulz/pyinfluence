@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 def _require_mpl():
     try:
         import matplotlib.pyplot as plt
+
         return plt
     except ImportError as e:
         raise ImportError(
@@ -97,9 +98,7 @@ def _as_labels(labels: ArrayLike | None, expected_len: int) -> np.ndarray | None
         return None
     arr = np.asarray(labels).ravel()
     if arr.size != expected_len:
-        raise ValueError(
-            f"labels has length {arr.size}, expected {expected_len}"
-        )
+        raise ValueError(f"labels has length {arr.size}, expected {expected_len}")
     return arr.astype(str) if arr.dtype.kind != "U" else arr
 
 
@@ -170,8 +169,8 @@ def plot_top_influencers(
     order = valid[np.argsort(row[valid])]  # ascending (most harmful first)
     # Strict signed-value ranking top -> bottom: most helpful first, then
     # decreasing through 0 to most harmful at the bottom.
-    helpful_desc = order[-k_eff:][::-1]   # [most_pos, ..., k-th_pos]
-    harmful_desc = order[:k_eff][::-1]    # [k-th_neg, ..., most_neg]
+    helpful_desc = order[-k_eff:][::-1]  # [most_pos, ..., k-th_pos]
+    harmful_desc = order[:k_eff][::-1]  # [k-th_neg, ..., most_neg]
     idx = np.concatenate([helpful_desc, harmful_desc])
     vals = row[idx]
     colors = [_HELPFUL if v >= 0 else _HARMFUL for v in vals]
@@ -184,7 +183,9 @@ def plot_top_influencers(
     fig, ax = _ax_or_new(ax, figsize=(6, max(3, 0.3 * len(idx))))
     y = np.arange(len(idx))
     ax.barh(
-        y, vals, color=colors,
+        y,
+        vals,
+        color=colors,
         xerr=None if err_row is None else err_row[idx],
         error_kw={"ecolor": "black", "elinewidth": 0.8, "capsize": 2},
     )
@@ -197,9 +198,13 @@ def plot_top_influencers(
     # 1-D input has no "test sample" framing (e.g. functional-influence
     # score vectors)
     ax.set_title(
-        title if title is not None
-        else ("Top influencers" if is_1d
-              else f"Top influencers for test sample {test_idx}")
+        title
+        if title is not None
+        else (
+            "Top influencers"
+            if is_1d
+            else f"Top influencers for test sample {test_idx}"
+        )
     )
     fig.tight_layout()
     return fig, ax
@@ -265,13 +270,15 @@ def plot_self_influence(
         # are by definition rare and far from the bulk. Log y-axis keeps the
         # tail visible without hiding the bulk.
         n_bins = min(50, max(15, s.size // 4))
-        ax.hist(s, bins=n_bins, color=_NEUTRAL, alpha=0.85,
-                edgecolor="white", linewidth=0.4)
+        ax.hist(
+            s, bins=n_bins, color=_NEUTRAL, alpha=0.85, edgecolor="white", linewidth=0.4
+        )
         ax.set_yscale("symlog", linthresh=1)
         ax.set_ylim(bottom=0)
         if thr is not None:
-            ax.axvline(thr, color=_HARMFUL, linestyle="--",
-                       label=f"threshold = {thr:.3g}")
+            ax.axvline(
+                thr, color=_HARMFUL, linestyle="--", label=f"threshold = {thr:.3g}"
+            )
             ax.legend(loc="upper right", frameon=False)
         ax.set_xlabel("|Self-influence|")
         ax.set_ylabel("Count (symlog)")
@@ -281,11 +288,26 @@ def plot_self_influence(
         if err.shape != s.shape:
             raise ValueError("errors must have the same shape as self_inf")
         err_thr = float(np.percentile(err, 75))
-        flagged = (s > thr if thr is not None else np.zeros_like(s, bool)) & (err > err_thr)
-        ax.scatter(s[~flagged], err[~flagged], c=_NEUTRAL, alpha=0.5,
-                   edgecolors="none", label="other")
-        ax.scatter(s[flagged], err[flagged], c=_HARMFUL, alpha=0.9,
-                   edgecolors="black", s=50, label="flagged")
+        flagged = (s > thr if thr is not None else np.zeros_like(s, bool)) & (
+            err > err_thr
+        )
+        ax.scatter(
+            s[~flagged],
+            err[~flagged],
+            c=_NEUTRAL,
+            alpha=0.5,
+            edgecolors="none",
+            label="other",
+        )
+        ax.scatter(
+            s[flagged],
+            err[flagged],
+            c=_HARMFUL,
+            alpha=0.9,
+            edgecolors="black",
+            s=50,
+            label="flagged",
+        )
         if thr is not None:
             ax.axvline(thr, color="gray", linestyle="--", linewidth=0.8)
         ax.axhline(err_thr, color="gray", linestyle="--", linewidth=0.8)
@@ -293,8 +315,14 @@ def plot_self_influence(
             labels_arr = _as_labels(labels, s.size)
             for i in np.where(flagged)[0]:
                 tag = labels_arr[i] if labels_arr is not None else str(i)
-                ax.annotate(tag, (s[i], err[i]), fontsize=8, alpha=0.8,
-                            xytext=(3, 3), textcoords="offset points")
+                ax.annotate(
+                    tag,
+                    (s[i], err[i]),
+                    fontsize=8,
+                    alpha=0.8,
+                    xytext=(3, 3),
+                    textcoords="offset points",
+                )
         ax.set_xlabel("|Self-influence|")
         ax.set_ylabel("Error")
         if flagged.any():
@@ -349,10 +377,9 @@ def plot_by_group(
     fig, ax = _ax_or_new(ax)
 
     if style == "bar":
-        agg = np.array([
-            (s[g == u].sum() if method == "sum" else s[g == u].mean())
-            for u in uniq
-        ])
+        agg = np.array(
+            [(s[g == u].sum() if method == "sum" else s[g == u].mean()) for u in uniq]
+        )
         colors = [_HELPFUL if v >= 0 else _HARMFUL for v in agg]
         x = np.arange(len(uniq))
         ax.bar(x, agg, color=colors)
@@ -368,8 +395,12 @@ def plot_by_group(
                 body.set_facecolor(_NEUTRAL)
                 body.set_alpha(0.6)
         elif style == "box":
-            ax.boxplot(data, tick_labels=[str(u) for u in uniq], patch_artist=True,
-                       boxprops=dict(facecolor=_NEUTRAL, alpha=0.5))
+            ax.boxplot(
+                data,
+                tick_labels=[str(u) for u in uniq],
+                patch_artist=True,
+                boxprops=dict(facecolor=_NEUTRAL, alpha=0.5),
+            )
         else:
             raise ValueError("style must be 'bar', 'box', or 'violin'")
         if style == "violin":
@@ -471,9 +502,11 @@ def plot_heatmap(
         return labels_arr[orig_idx] if labels_arr is not None else str(int(orig_idx))
 
     ax.set_xticks(xt)
-    ax.set_xticklabels([_tick_label(col_keep[t], train_labels_arr) for t in xt],
-                        rotation=45 if train_labels_arr is not None else 0,
-                        ha="right" if train_labels_arr is not None else "center")
+    ax.set_xticklabels(
+        [_tick_label(col_keep[t], train_labels_arr) for t in xt],
+        rotation=45 if train_labels_arr is not None else 0,
+        ha="right" if train_labels_arr is not None else "center",
+    )
     ax.set_yticks(yt)
     ax.set_yticklabels([_tick_label(row_keep[t], test_labels_arr) for t in yt])
 
@@ -539,6 +572,7 @@ def plot_method_comparison(
     info_lines = []
     if show_correlation:
         from scipy import stats
+
         pr, _ = stats.pearsonr(a, b)
         sr, _ = stats.spearmanr(a, b)
         info_lines.append(f"Pearson r = {pr:.3f}")
@@ -547,22 +581,35 @@ def plot_method_comparison(
     if show_fit and a.size >= 2 and np.ptp(a) > 0:
         slope, intercept = np.polyfit(a, b, 1)
         xs = np.array([a.min(), a.max()])
-        ax.plot(xs, slope * xs + intercept, color=_HELPFUL,
-                linewidth=1.5, label=f"fit: slope = {slope:.3g}")
+        ax.plot(
+            xs,
+            slope * xs + intercept,
+            color=_HELPFUL,
+            linewidth=1.5,
+            label=f"fit: slope = {slope:.3g}",
+        )
         info_lines.append(f"slope = {slope:.3g}")
 
     if show_identity:
         lo = float(min(a.min(), b.min()))
         hi = float(max(a.max(), b.max()))
-        ax.plot([lo, hi], [lo, hi], "k--", linewidth=0.7, alpha=0.6,
-                label="y = x")
+        ax.plot([lo, hi], [lo, hi], "k--", linewidth=0.7, alpha=0.6, label="y = x")
 
     if info_lines:
         ax.text(
-            0.04, 0.96, "\n".join(info_lines),
-            transform=ax.transAxes, va="top", ha="left", fontsize=9,
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
-                      edgecolor="lightgray", alpha=0.85),
+            0.04,
+            0.96,
+            "\n".join(info_lines),
+            transform=ax.transAxes,
+            va="top",
+            ha="left",
+            fontsize=9,
+            bbox=dict(
+                boxstyle="round,pad=0.3",
+                facecolor="white",
+                edgecolor="lightgray",
+                alpha=0.85,
+            ),
         )
 
     ax.set_xlabel(names[0])
@@ -606,17 +653,28 @@ def plot_removal_curve(
     by_inf = np.asarray(curve["by_influence"])
     direction = curve.get("direction", "harmful")
 
-    ax.plot(f, by_inf, color=_HARMFUL if direction == "harmful" else _HELPFUL,
-            marker="o", linewidth=1.8,
-            label=f"remove {direction} (by influence)")
+    ax.plot(
+        f,
+        by_inf,
+        color=_HARMFUL if direction == "harmful" else _HELPFUL,
+        marker="o",
+        linewidth=1.8,
+        label=f"remove {direction} (by influence)",
+    )
 
     rmean = np.asarray(curve.get("random_mean", []))
     rstd = np.asarray(curve.get("random_std", []))
     if rmean.size:
-        ax.plot(f, rmean, color=_NEUTRAL, linestyle="--", marker="s",
-                linewidth=1.2, label="random baseline")
-        ax.fill_between(f, rmean - rstd, rmean + rstd,
-                        color=_NEUTRAL, alpha=0.15)
+        ax.plot(
+            f,
+            rmean,
+            color=_NEUTRAL,
+            linestyle="--",
+            marker="s",
+            linewidth=1.2,
+            label="random baseline",
+        )
+        ax.fill_between(f, rmean - rstd, rmean + rstd, color=_NEUTRAL, alpha=0.15)
 
     ax.set_xlabel("Fraction of training data removed")
     ax.set_ylabel("Mean test loss")
@@ -668,26 +726,52 @@ def plot_disparity_curve(
     f = np.asarray(curve["fractions"])
     disp = np.asarray(curve["disparity"])
 
-    ax.plot(f, disp, color=_HELPFUL, marker="o", linewidth=1.8,
-            label="smoothed disparity (by influence)")
+    ax.plot(
+        f,
+        disp,
+        color=_HELPFUL,
+        marker="o",
+        linewidth=1.8,
+        label="smoothed disparity (by influence)",
+    )
 
     hard = np.asarray(curve.get("disparity_hard", []))
     if show_hard and hard.size and not np.isnan(hard).all():
-        ax.plot(f, hard, color=_HELPFUL, marker="s", linewidth=1.2,
-                linestyle=":", alpha=0.8, label="hard-decision disparity")
+        ax.plot(
+            f,
+            hard,
+            color=_HELPFUL,
+            marker="s",
+            linewidth=1.2,
+            linestyle=":",
+            alpha=0.8,
+            label="hard-decision disparity",
+        )
 
     rmean = np.asarray(curve.get("random_disparity_mean", []))
     rstd = np.asarray(curve.get("random_disparity_std", []))
     if rmean.size:
-        ax.plot(f, rmean, color=_NEUTRAL, linestyle="--", marker="s",
-                linewidth=1.2, label="random baseline")
-        ax.fill_between(f, rmean - rstd, rmean + rstd,
-                        color=_NEUTRAL, alpha=0.15)
+        ax.plot(
+            f,
+            rmean,
+            color=_NEUTRAL,
+            linestyle="--",
+            marker="s",
+            linewidth=1.2,
+            label="random baseline",
+        )
+        ax.fill_between(f, rmean - rstd, rmean + rstd, color=_NEUTRAL, alpha=0.15)
 
     base = curve.get("base_disparity")
     if base is not None and np.isfinite(base):
-        ax.axhline(base, color="black", linewidth=0.6, linestyle="-",
-                   alpha=0.5, label="full model")
+        ax.axhline(
+            base,
+            color="black",
+            linewidth=0.6,
+            linestyle="-",
+            alpha=0.5,
+            label="full model",
+        )
 
     ax.set_xlabel("Fraction of training data removed")
     ax.set_ylabel("Disparity")
@@ -754,12 +838,30 @@ def plot_detection_curve(
     frac_inspected = np.arange(1, n + 1) / n
 
     fig, ax = _ax_or_new(ax)
-    ax.plot(frac_inspected, found, color=_HELPFUL, linewidth=1.8,
-            label="by |self-influence|")
-    ax.plot([0, 1], [0, 1], color=_NEUTRAL, linestyle="--", linewidth=1.0,
-            label="random inspection")
-    ax.plot([0, n_corr / n, 1], [0, 1, 1], color=_NEUTRAL, linestyle=":",
-            linewidth=1.0, alpha=0.8, label="perfect ranking")
+    ax.plot(
+        frac_inspected,
+        found,
+        color=_HELPFUL,
+        linewidth=1.8,
+        label="by |self-influence|",
+    )
+    ax.plot(
+        [0, 1],
+        [0, 1],
+        color=_NEUTRAL,
+        linestyle="--",
+        linewidth=1.0,
+        label="random inspection",
+    )
+    ax.plot(
+        [0, n_corr / n, 1],
+        [0, 1, 1],
+        color=_NEUTRAL,
+        linestyle=":",
+        linewidth=1.0,
+        alpha=0.8,
+        label="perfect ranking",
+    )
 
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
@@ -818,20 +920,32 @@ def plot_influence_concentration(
     frac_samples = np.arange(1, mass.size + 1) / mass.size
 
     fig, ax = _ax_or_new(ax)
-    ax.plot(frac_samples, cum_share, color=_HELPFUL, linewidth=1.8,
-            label="cumulative |influence|")
-    ax.plot([0, 1], [0, 1], color=_NEUTRAL, linestyle="--", linewidth=1.0,
-            label="uniform")
+    ax.plot(
+        frac_samples,
+        cum_share,
+        color=_HELPFUL,
+        linewidth=1.8,
+        label="cumulative |influence|",
+    )
+    ax.plot(
+        [0, 1], [0, 1], color=_NEUTRAL, linestyle="--", linewidth=1.0, label="uniform"
+    )
 
     if mark_share is not None:
         j = int(np.searchsorted(cum_share, mark_share))
         if j < mass.size:
             fx = frac_samples[j]
-            ax.plot([fx, fx, 0], [0, mark_share, mark_share],
-                    color=_NEUTRAL, linewidth=0.7, linestyle=":")
+            ax.plot(
+                [fx, fx, 0],
+                [0, mark_share, mark_share],
+                color=_NEUTRAL,
+                linewidth=0.7,
+                linestyle=":",
+            )
             ax.annotate(
                 f"{fx:.0%} of samples carry {mark_share:.0%} of influence",
-                xy=(fx, mark_share), xytext=(fx + 0.03, mark_share - 0.12),
+                xy=(fx, mark_share),
+                xytext=(fx + 0.03, mark_share - 0.12),
                 fontsize=9,
             )
 
@@ -1008,34 +1122,51 @@ def report(
     fig, axes = plt.subplots(2, 2, figsize=(13, 9))
 
     plot_self_influence(
-        self_inf, errors=errors, threshold="auto",
+        self_inf,
+        errors=errors,
+        threshold="auto",
         labels=train_labels,
         ax=axes[0, 0],
-        title=("Self-influence vs error" if errors is not None
-               else "Self-influence distribution"),
+        title=(
+            "Self-influence vs error"
+            if errors is not None
+            else "Self-influence distribution"
+        ),
     )
 
     plot_top_influencers(
-        scores, test_idx=test_idx, k=k, labels=train_labels,
+        scores,
+        test_idx=test_idx,
+        k=k,
+        labels=train_labels,
         ax=axes[0, 1],
         title=f"Top influencers for test sample {test_idx}",
     )
 
     plot_heatmap(
-        scores, top_k=top_k,
-        train_labels=train_labels, test_labels=test_labels,
+        scores,
+        top_k=top_k,
+        train_labels=train_labels,
+        test_labels=test_labels,
         ax=axes[1, 0],
         title=f"Influence heatmap (top {top_k})",
     )
 
     if groups is not None:
-        plot_by_group(scores, groups, style="bar", method="sum",
-                      ax=axes[1, 1], title="Influence by group")
+        plot_by_group(
+            scores,
+            groups,
+            style="bar",
+            method="sum",
+            ax=axes[1, 1],
+            title="Influence by group",
+        )
     else:
         agg = _aggregate_to_1d(scores, method="sum")
         order = np.argsort(agg)
         axes[1, 1].bar(
-            np.arange(agg.size), agg[order],
+            np.arange(agg.size),
+            agg[order],
             color=[_HELPFUL if v >= 0 else _HARMFUL for v in agg[order]],
         )
         axes[1, 1].axhline(0, color="black", linewidth=0.5)
@@ -1046,7 +1177,8 @@ def report(
     fig.suptitle(
         f"{type(attributor).__name__}  •  mode={getattr(attributor, 'mode', '?')}"
         f"  •  n_train={self_inf.size}  •  n_test={np.asarray(X_test).shape[0]}",
-        y=1.005, fontsize=11,
+        y=1.005,
+        fontsize=11,
     )
     fig.tight_layout()
     if save_path is not None:

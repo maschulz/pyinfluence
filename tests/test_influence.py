@@ -77,7 +77,9 @@ class TestHessianRidge:
         # Manual: H = X'X / n + diag([lambda, lambda]) + damping * I
         expected = X.T @ X / n + np.diag([reg_lambda, reg_lambda]) + damping * np.eye(p)
 
-        H = _hessian_ridge(X, reg_lambda=reg_lambda, damping=damping, has_intercept=False)
+        H = _hessian_ridge(
+            X, reg_lambda=reg_lambda, damping=damping, has_intercept=False
+        )
         np.testing.assert_allclose(H, expected, rtol=1e-10)
 
     def test_hessian_intercept_not_regularized(self):
@@ -94,7 +96,9 @@ class TestHessianRidge:
         expected_damp = _damping_matrix(p + 1, damping, has_intercept=True)
         expected = X_aug.T @ X_aug / n + expected_reg + expected_damp
 
-        H = _hessian_ridge(X_aug, reg_lambda=reg_lambda, damping=damping, has_intercept=True)
+        H = _hessian_ridge(
+            X_aug, reg_lambda=reg_lambda, damping=damping, has_intercept=True
+        )
         np.testing.assert_allclose(H, expected, rtol=1e-10)
 
 
@@ -289,7 +293,9 @@ class TestHessianLogistic:
         n, p = X_train.shape
         # Compute probabilities (mock fitted model)
         probs = np.full(n, 0.5)  # Placeholder
-        H = _hessian_logistic(X_train, probs, reg_lambda=1.0, damping=1e-5, has_intercept=False)
+        H = _hessian_logistic(
+            X_train, probs, reg_lambda=1.0, damping=1e-5, has_intercept=False
+        )
         assert H.shape == (p, p)
 
     def test_hessian_shape_with_intercept(self, binary_classification_data):
@@ -298,7 +304,9 @@ class TestHessianLogistic:
         n, p = X_train.shape
         X_aug = _augment_intercept(X_train)
         probs = np.full(n, 0.5)
-        H = _hessian_logistic(X_aug, probs, reg_lambda=1.0, damping=1e-5, has_intercept=True)
+        H = _hessian_logistic(
+            X_aug, probs, reg_lambda=1.0, damping=1e-5, has_intercept=True
+        )
         assert H.shape == (p + 1, p + 1)
 
     def test_hessian_symmetric(self, binary_classification_data):
@@ -306,7 +314,9 @@ class TestHessianLogistic:
         X_train, _, y_train, _ = binary_classification_data
         n = X_train.shape[0]
         probs = np.random.rand(n) * 0.8 + 0.1  # Random probs in (0.1, 0.9)
-        H = _hessian_logistic(X_train, probs, reg_lambda=1.0, damping=1e-5, has_intercept=False)
+        H = _hessian_logistic(
+            X_train, probs, reg_lambda=1.0, damping=1e-5, has_intercept=False
+        )
         np.testing.assert_allclose(H, H.T, rtol=1e-10)
 
     def test_hessian_positive_definite(self, binary_classification_data):
@@ -314,7 +324,9 @@ class TestHessianLogistic:
         X_train, _, y_train, _ = binary_classification_data
         n = X_train.shape[0]
         probs = np.random.rand(n) * 0.8 + 0.1
-        H = _hessian_logistic(X_train, probs, reg_lambda=1.0, damping=1e-5, has_intercept=False)
+        H = _hessian_logistic(
+            X_train, probs, reg_lambda=1.0, damping=1e-5, has_intercept=False
+        )
         eigenvalues = np.linalg.eigvalsh(H)
         assert np.all(eigenvalues > 0)
 
@@ -333,7 +345,9 @@ class TestHessianLogistic:
         expected += np.diag([reg_lambda, reg_lambda])
         expected += damping * np.eye(p)
 
-        H = _hessian_logistic(X, probs, reg_lambda=reg_lambda, damping=damping, has_intercept=False)
+        H = _hessian_logistic(
+            X, probs, reg_lambda=reg_lambda, damping=damping, has_intercept=False
+        )
         np.testing.assert_allclose(H, expected, rtol=1e-10)
 
     def test_hessian_intercept_not_regularized(self):
@@ -351,7 +365,9 @@ class TestHessianLogistic:
         expected += np.diag([reg_lambda, reg_lambda, 0.0])
         expected += _damping_matrix(p + 1, damping, has_intercept=True)
 
-        H = _hessian_logistic(X_aug, probs, reg_lambda=reg_lambda, damping=damping, has_intercept=True)
+        H = _hessian_logistic(
+            X_aug, probs, reg_lambda=reg_lambda, damping=damping, has_intercept=True
+        )
         np.testing.assert_allclose(H, expected, rtol=1e-10)
 
 
@@ -425,17 +441,15 @@ class TestInfluenceFunctionsLogisticIntercept:
         X_train, X_test, y_train, y_test = binary_classification_data
 
         # Model with intercept
-        model_with = LogisticRegression(
-            C=1.0, fit_intercept=True, random_state=42
-        ).fit(X_train, y_train)
+        model_with = LogisticRegression(C=1.0, fit_intercept=True, random_state=42).fit(
+            X_train, y_train
+        )
 
         attr = InfluenceFunctions(mode="loss", damping=1e-5)
         attr.fit(model_with, X_train, y_train)
         scores_with = attr.explain(X_test, y_test)
 
-        assert_influence_scores_valid(
-            scores_with, X_test.shape[0], X_train.shape[0]
-        )
+        assert_influence_scores_valid(scores_with, X_test.shape[0], X_train.shape[0])
 
     def test_intercept_handling_no_intercept(self, binary_classification_data):
         """Verify model without intercept works correctly."""
@@ -450,17 +464,15 @@ class TestInfluenceFunctionsLogisticIntercept:
         attr.fit(model_without, X_train, y_train)
         scores_without = attr.explain(X_test, y_test)
 
-        assert_influence_scores_valid(
-            scores_without, X_test.shape[0], X_train.shape[0]
-        )
+        assert_influence_scores_valid(scores_without, X_test.shape[0], X_train.shape[0])
 
     def test_intercept_different_from_no_intercept(self, binary_classification_data):
         """Models with/without intercept should produce different influence scores."""
         X_train, X_test, y_train, y_test = binary_classification_data
 
-        model_with = LogisticRegression(
-            C=1.0, fit_intercept=True, random_state=42
-        ).fit(X_train, y_train)
+        model_with = LogisticRegression(C=1.0, fit_intercept=True, random_state=42).fit(
+            X_train, y_train
+        )
 
         model_without = LogisticRegression(
             C=1.0, fit_intercept=False, random_state=42
@@ -499,6 +511,7 @@ class TestLossPredictionRelationship:
         residuals = y_test - predictions
         expected_I_loss = residuals[:, np.newaxis] * I_pred
         np.testing.assert_allclose(I_loss, expected_I_loss, rtol=1e-8)
+
 
 @pytest.mark.parametrize("fitted_fixture", ["fitted_ridge", "fitted_logistic_binary"])
 def test_higher_damping_reduces_influence_magnitude(fitted_fixture, request):

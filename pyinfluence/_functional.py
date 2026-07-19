@@ -126,7 +126,8 @@ def as_functional(functional) -> Functional:
         return functional
     if callable(functional):
         return Functional(
-            fn=functional, of="scores",
+            fn=functional,
+            of="scores",
             name=getattr(functional, "__name__", "functional"),
         )
     raise TypeError(
@@ -184,12 +185,9 @@ def _model_values(
     """Per-sample values of the requested kind on the reference set."""
     if of == "losses":
         if y is None:
-            raise ValueError(
-                "y_ref is required for a functional of per-sample losses."
-            )
+            raise ValueError("y_ref is required for a functional of per-sample losses.")
         return _compute_loss_sklearn(model, X, y, is_classifier(model))
     return _model_scores(model, X)
-
 
 
 def _resolve_functional(default, override) -> Functional:
@@ -249,10 +247,7 @@ def _refit_without(
 ) -> BaseEstimator | None:
     mask = np.ones(len(y), dtype=bool)
     mask[remove] = False
-    est = (
-        refit_factory(int(mask.sum())) if refit_factory is not None
-        else clone(model)
-    )
+    est = refit_factory(int(mask.sum())) if refit_factory is not None else clone(model)
     try:
         return est.fit(X[mask], y[mask])
     except Exception:
@@ -342,9 +337,7 @@ class FunctionalInfluence:
         base = InfluenceFunctions(mode="prediction", damping=self.damping)
         base.fit(model, X, y)
         if base.model_type_ == "kernel_ridge":
-            raise ValueError(
-                "KernelRidge is not supported by FunctionalInfluence."
-            )
+            raise ValueError("KernelRidge is not supported by FunctionalInfluence.")
         self.base_attributor_ = base
         self.model_ = model
         X_arr, y_arr = _prepare_fit_inputs(X, y)
@@ -441,10 +434,7 @@ class FunctionalInfluence:
 
         base_value = evaluate(values)
         # dv (m, n) in column blocks: per_sample @ H^{-1} @ train_grads.T / n
-        left = (
-            per_sample if self.hessian == "identity"
-            else per_sample @ base.H_inv_
-        )
+        left = per_sample if self.hessian == "identity" else per_sample @ base.H_inv_
         scores = np.empty(n_train)
         block = max(1, int(2**22 // max(1, values.size)))  # ~32 MB blocks
         for start in range(0, n_train, block):
@@ -495,6 +485,7 @@ class FunctionalInfluence:
                     "Functional value is exactly 0; absolute-target gradient "
                     "is undefined. Returning the signed gradient.",
                     UserWarning,
+                    stacklevel=2,
                 )
             else:
                 grad = np.sign(value) * grad
@@ -539,10 +530,16 @@ class FunctionalInfluence:
             return -X_aug * (y01 - p)[:, None]
         # squared-error models: _compute_loss_sklearn uses the *unhalved*
         # squared error, so the matching gradient carries a factor 2
-        theta = np.concatenate(
-            [np.atleast_1d(model.coef_).ravel(),
-             np.atleast_1d(model.intercept_).ravel()]
-        ) if model.fit_intercept else np.atleast_1d(model.coef_).ravel()
+        theta = (
+            np.concatenate(
+                [
+                    np.atleast_1d(model.coef_).ravel(),
+                    np.atleast_1d(model.intercept_).ravel(),
+                ]
+            )
+            if model.fit_intercept
+            else np.atleast_1d(model.coef_).ravel()
+        )
         if base.model_type_ == "ridge_classifier":
             yv = np.where(np.asarray(y).ravel() == model.classes_[1], 1.0, -1.0)
         else:
@@ -618,8 +615,7 @@ class RefitFunctionalInfluence:
             self.loo_models_ = [one(j) for j in it]
         else:
             with tqdm_joblib(
-                tqdm(total=n, desc="Fitting LOO models",
-                     disable=(self.verbose == 0))
+                tqdm(total=n, desc="Fitting LOO models", disable=(self.verbose == 0))
             ):
                 self.loo_models_ = Parallel(n_jobs=self.n_jobs)(
                     delayed(one)(j) for j in range(n)
@@ -627,9 +623,9 @@ class RefitFunctionalInfluence:
         n_failed = sum(m is None for m in self.loo_models_)
         if n_failed:
             warnings.warn(
-                f"Refit failed for {n_failed} points; their scores will be "
-                "NaN.",
+                f"Refit failed for {n_failed} points; their scores will be NaN.",
                 UserWarning,
+                stacklevel=2,
             )
         return self
 
@@ -662,10 +658,12 @@ class RefitFunctionalInfluence:
             return abs(v) if target == "absolute" else v
 
         base_value = evaluate(self.model_)
-        return np.array([
-            float("nan") if m is None else evaluate(m) - base_value
-            for m in self.loo_models_
-        ])
+        return np.array(
+            [
+                float("nan") if m is None else evaluate(m) - base_value
+                for m in self.loo_models_
+            ]
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -756,8 +754,11 @@ class SubsampledFunctionalInfluence:
             models = [fit_one(m) for m in it]
         else:
             with tqdm_joblib(
-                tqdm(total=self.n_subsets, desc="Fitting subset models",
-                     disable=(self.verbose == 0))
+                tqdm(
+                    total=self.n_subsets,
+                    desc="Fitting subset models",
+                    disable=(self.verbose == 0),
+                )
             ):
                 models = Parallel(n_jobs=self.n_jobs)(
                     delayed(fit_one)(m) for m in masks
@@ -765,9 +766,9 @@ class SubsampledFunctionalInfluence:
         ok = [i for i, m in enumerate(models) if m is not None]
         if len(ok) < self.n_subsets:
             warnings.warn(
-                f"{self.n_subsets - len(ok)} subset fits failed and were "
-                "dropped.",
+                f"{self.n_subsets - len(ok)} subset fits failed and were dropped.",
                 UserWarning,
+                stacklevel=2,
             )
         self.subset_masks_ = masks[ok]
         self.subset_models_ = [models[i] for i in ok]
@@ -812,5 +813,6 @@ class SubsampledFunctionalInfluence:
                 "Some points were never included (or never excluded) in any "
                 "subset; their scores are NaN. Increase n_subsets.",
                 UserWarning,
+                stacklevel=2,
             )
         return scores

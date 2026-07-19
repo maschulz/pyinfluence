@@ -148,6 +148,7 @@ def test_validate_model_logistic_multiclass_rejected():
 def test_validate_model_ridge_classifier_multiclass_rejected():
     """validate_model() rejects multiclass RidgeClassifier."""
     from sklearn.linear_model import RidgeClassifier
+
     X, y = make_classification(
         n_samples=200,
         n_features=10,
@@ -224,9 +225,9 @@ def test_extract_regularization_logistic_custom_c(binary_classification_data):
 def test_extract_regularization_logistic_no_penalty(binary_classification_data):
     """LogisticRegression penalty=None -> 0.0."""
     X_train, _, y_train, _ = binary_classification_data
-    model = LogisticRegression(
-        penalty=None, solver="lbfgs", max_iter=500
-    ).fit(X_train, y_train)
+    model = LogisticRegression(penalty=None, solver="lbfgs", max_iter=500).fit(
+        X_train, y_train
+    )
     assert extract_regularization(model) == 0.0
 
 
@@ -248,8 +249,8 @@ def test_validate_model_warns(fixture_name, warning_match, request):
 def test_validate_model_warns_no_penalty_logistic(binary_classification_data):
     """validate_model() warns for LogisticRegression with penalty=None."""
     X_train, _, y_train, _ = binary_classification_data
-    model = LogisticRegression(
-        penalty=None, solver="lbfgs", max_iter=500
-    ).fit(X_train, y_train)
+    model = LogisticRegression(penalty=None, solver="lbfgs", max_iter=500).fit(
+        X_train, y_train
+    )
     with pytest.warns(UserWarning, match="no regularization"):
         validate_model(model)

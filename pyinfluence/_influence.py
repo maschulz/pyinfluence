@@ -102,7 +102,7 @@ class InfluenceFunctions(BaseAttributor):
     --------
     >>> from sklearn.linear_model import Ridge
     >>> model = Ridge(alpha=1.0).fit(X_train, y_train)
-    >>> attr = InfluenceFunctions(mode='loss', damping=1e-5)
+    >>> attr = InfluenceFunctions(mode="loss", damping=1e-5)
     >>> attr.fit(model, X_train, y_train)
     >>> scores = attr.explain(X_test, y_test)  # y_test required for mode='loss'
     """
@@ -240,7 +240,9 @@ class InfluenceFunctions(BaseAttributor):
             probs = self.model_.predict_proba(self.X_train_raw_)[:, 1]
 
         # Compute Hessian and its inverse
-        H = _hessian_logistic(X_aug, probs, reg_lambda, self.damping, self.has_intercept_)
+        H = _hessian_logistic(
+            X_aug, probs, reg_lambda, self.damping, self.has_intercept_
+        )
         self.H_inv_ = _invert_hessian(H)
 
         # Compute training gradients. The NLL gradient needs y as a 0/1
@@ -394,7 +396,9 @@ class InfluenceFunctions(BaseAttributor):
     ) -> NDArray[np.floating]:
         """Compute scores for binary logistic regression."""
         if self.mode == "loss":
-            test_grads = self._compute_test_grads_loss_logistic_binary(X_test_aug, y_test)
+            test_grads = self._compute_test_grads_loss_logistic_binary(
+                X_test_aug, y_test
+            )
         else:
             test_grads = self._compute_test_grads_prediction_logistic_binary(X_test_aug)
 
@@ -444,9 +448,7 @@ class InfluenceFunctions(BaseAttributor):
 
         with _quiet_sklearn():
             probs = self.model_.predict_proba(X_test_raw)[:, 1]
-        y_test = validate_labels_in_classes(
-            y_test, self.model_.classes_, name="y_test"
-        )
+        y_test = validate_labels_in_classes(y_test, self.model_.classes_, name="y_test")
         y01 = (y_test == self.model_.classes_[1]).astype(float)
         return _gradients_logistic(X_test_aug, y01, probs)
 
@@ -495,8 +497,7 @@ class InfluenceFunctions(BaseAttributor):
                 )
             sign = -1.0
         diag = (
-            np.einsum("ij,ij->i", test_grads @ self.H_inv_, self.train_grads_)
-            / n_train
+            np.einsum("ij,ij->i", test_grads @ self.H_inv_, self.train_grads_) / n_train
         )
         return sign * diag
 

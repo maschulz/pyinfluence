@@ -56,8 +56,38 @@ line-length = 88
 target-version = "py39"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP"]
-ignore = ["E501"]
+select = ["E", "F", "W", "I", "B", "C4", "UP"]
+ignore = [
+  "E501",  # line length is enforced by the formatter for code; prose is exempt
+  "C408",  # dict(a=1) reads well for kwargs-style construction
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pyinfluence"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+docstring-code-format = true
+docstring-code-line-length = 88
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "numpy.*",
+    "scipy.*",
+    "sklearn.*",
+    "matplotlib.*",
+    "joblib.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -89,12 +119,15 @@ python = "3.10.*"
 python = "3.11.*"
 [tool.pixi.feature.py312.dependencies]
 python = "3.12.*"
+[tool.pixi.feature.py313.dependencies]
+python = "3.13.*"
 
 [tool.pixi.environments]
 default = ["py312"]
 py39 = ["py39"]
 py310 = ["py310"]
 py311 = ["py311"]
+py313 = ["py313"]
 
 [tool.pixi.tasks]
 test = "pytest"

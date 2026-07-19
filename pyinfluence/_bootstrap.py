@@ -146,7 +146,7 @@ class BootstrapInfluence(BaseAttributor):
     --------
     >>> from sklearn.ensemble import RandomForestRegressor
     >>> model = RandomForestRegressor().fit(X_train, y_train)
-    >>> attr = BootstrapInfluence(mode='loss', n_estimators=50, random_state=42)
+    >>> attr = BootstrapInfluence(mode="loss", n_estimators=50, random_state=42)
     >>> attr.fit(model, X_train, y_train)
     >>> scores = attr.explain(X_test, y_test)
     """
@@ -203,8 +203,7 @@ class BootstrapInfluence(BaseAttributor):
             iterator = tqdm(iterator, desc="Fitting bootstrap models")
         if self.n_jobs is None or self.n_jobs == 1:
             bootstrap_models = [
-                _fit_bootstrap_model(model, X, y, in_bag_list[b])
-                for b in iterator
+                _fit_bootstrap_model(model, X, y, in_bag_list[b]) for b in iterator
             ]
         else:
             with tqdm_joblib(
@@ -227,6 +226,7 @@ class BootstrapInfluence(BaseAttributor):
                 f"Bootstrap fit failed for {len(self.failed_estimator_indices_)} "
                 "runs. Influence scores will use only successful runs.",
                 UserWarning,
+                stacklevel=2,
             )
         self.bootstrap_models_ = bootstrap_models
         return self
@@ -322,9 +322,7 @@ class BootstrapInfluence(BaseAttributor):
         # and few-OOB points. A point that is in-bag in every run is the most
         # extreme dropout and must not be the one silent case.
         n_oob_per_i = np.sum(oob_mask[:, valid_b], axis=1)
-        few_oob = int(
-            np.sum((n_oob_per_i > 0) & (n_oob_per_i < self.min_oob_runs))
-        )
+        few_oob = int(np.sum((n_oob_per_i > 0) & (n_oob_per_i < self.min_oob_runs)))
         issues = []
         if n_no_oob > 0:
             issues.append(
@@ -343,9 +341,11 @@ class BootstrapInfluence(BaseAttributor):
             )
         if issues:
             warnings.warn(
-                "BootstrapInfluence: " + "; ".join(issues)
+                "BootstrapInfluence: "
+                + "; ".join(issues)
                 + ". Increase n_estimators for more reliable estimates.",
                 UserWarning,
+                stacklevel=2,
             )
         self.scores_std_ = scores_std
 

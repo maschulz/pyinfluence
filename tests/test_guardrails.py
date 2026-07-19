@@ -48,7 +48,9 @@ class TestIncompatibleConfigurationsRejected:
         model = LogisticRegression(class_weight="balanced", max_iter=1000).fit(
             X_train, y_train
         )
-        with pytest.raises(ValueError, match="LOOInfluence.*BanzhafInfluence.*BootstrapInfluence"):
+        with pytest.raises(
+            ValueError, match="LOOInfluence.*BanzhafInfluence.*BootstrapInfluence"
+        ):
             InfluenceFunctions().fit(model, X_train, y_train)
 
     @pytest.mark.parametrize("solver", ["liblinear", "saga"])
@@ -56,10 +58,12 @@ class TestIncompatibleConfigurationsRejected:
         X_train, _, y_train, _ = binary_classification_data
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            model = LogisticRegression(
-                penalty="l1", solver=solver, max_iter=2000
-            ).fit(X_train, y_train)
-        with pytest.raises(ValueError, match="LOOInfluence.*BanzhafInfluence.*BootstrapInfluence"):
+            model = LogisticRegression(penalty="l1", solver=solver, max_iter=2000).fit(
+                X_train, y_train
+            )
+        with pytest.raises(
+            ValueError, match="LOOInfluence.*BanzhafInfluence.*BootstrapInfluence"
+        ):
             InfluenceFunctions().fit(model, X_train, y_train)
 
 
@@ -86,13 +90,11 @@ class TestInfluenceAutoFallback:
         assert isinstance(attributor, BootstrapInfluence)
         assert scores.shape == (X_test.shape[0], X_train.shape[0])
 
-    def test_pipeline_warns_about_wrapping_and_falls_back(
-        self, regression_data
-    ):
+    def test_pipeline_warns_about_wrapping_and_falls_back(self, regression_data):
         X_train, X_test, y_train, y_test = regression_data
-        pipe = Pipeline(
-            [("scale", StandardScaler()), ("reg", Ridge(alpha=1.0))]
-        ).fit(X_train, y_train)
+        pipe = Pipeline([("scale", StandardScaler()), ("reg", Ridge(alpha=1.0))]).fit(
+            X_train, y_train
+        )
         with pytest.warns(UserWarning, match="wraps its estimator"):
             scores, attributor = influence(
                 pipe,
@@ -114,9 +116,7 @@ class TestInfluenceAutoFallback:
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "attr_cls", [InfluenceFunctions] + REFIT_ATTRIBUTOR_CLASSES
-)
+@pytest.mark.parametrize("attr_cls", [InfluenceFunctions] + REFIT_ATTRIBUTOR_CLASSES)
 def test_sparse_X_raises_type_error(attr_cls, fitted_ridge):
     model, X_train, y_train, X_test, y_test = fitted_ridge
     X_sparse = scipy.sparse.csr_matrix(X_train)
@@ -186,9 +186,7 @@ def test_extract_regularization_array_alpha_raises(regression_data):
 
 def test_liblinear_solver_warns_about_intercept(binary_classification_data):
     X_train, _, y_train, _ = binary_classification_data
-    model = LogisticRegression(solver="liblinear", max_iter=1000).fit(
-        X_train, y_train
-    )
+    model = LogisticRegression(solver="liblinear", max_iter=1000).fit(X_train, y_train)
     with pytest.warns(UserWarning, match="liblinear"):
         InfluenceFunctions().fit(model, X_train, y_train)
 

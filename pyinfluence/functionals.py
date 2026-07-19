@@ -96,15 +96,12 @@ class _GroupGap:
         if self.keep is None:
             return None, self.mask_g1
         if y is None:
-            raise ValueError(
-                "this group_gap conditions on the labels; pass y_ref."
-            )
+            raise ValueError("this group_gap conditions on the labels; pass y_ref.")
         k = np.asarray(self.keep(np.asarray(y).ravel()), dtype=bool)
         m1 = self.mask_g1[k]
         if m1.all() or not m1.any():
             raise ValueError(
-                "Both groups must be present in the (label-restricted) "
-                "reference set."
+                "Both groups must be present in the (label-restricted) reference set."
             )
         return k, m1
 
@@ -136,9 +133,9 @@ class _CohensD:
                 "cohens_d requires at least two reference samples per "
                 f"group; got {n1} and {n0}."
             )
-        pooled_var = (
-            (n1 - 1) * s1.var(ddof=1) + (n0 - 1) * s0.var(ddof=1)
-        ) / (n1 + n0 - 2)
+        pooled_var = ((n1 - 1) * s1.var(ddof=1) + (n0 - 1) * s0.var(ddof=1)) / (
+            n1 + n0 - 2
+        )
         if pooled_var <= 0:
             raise ValueError(
                 "cohens_d is undefined: zero pooled variance "
@@ -156,12 +153,8 @@ class _CohensD:
         d = (s1.mean() - s0.mean()) / sp
         g = np.empty(np.asarray(v).size)
         # d(mean gap)/dv +- 1/(n_g sp), minus the pooled-SD term
-        g[self.mask] = (1.0 / n1) / sp - d * (s1 - s1.mean()) / (
-            (n1 + n0 - 2) * sp2
-        )
-        g[~self.mask] = (-1.0 / n0) / sp - d * (s0 - s0.mean()) / (
-            (n1 + n0 - 2) * sp2
-        )
+        g[self.mask] = (1.0 / n1) / sp - d * (s1 - s1.mean()) / ((n1 + n0 - 2) * sp2)
+        g[~self.mask] = (-1.0 / n0) / sp - d * (s0 - s0.mean()) / ((n1 + n0 - 2) * sp2)
         return g
 
 
@@ -189,9 +182,7 @@ class _Auroc:
 
     def _split(self, v, y):
         if y is None:
-            raise ValueError(
-                "auroc requires the reference labels; pass y_ref."
-            )
+            raise ValueError("auroc requires the reference labels; pass y_ref.")
         v = np.asarray(v, dtype=float).ravel()
         y_arr = np.asarray(y).ravel()
         if y_arr.size != v.size:
@@ -230,9 +221,7 @@ def mean(of: ValueKind = "scores") -> Functional:
     it recovers (audit-aggregated) loss influence.
     """
     payload = _Mean()
-    return Functional(
-        fn=payload.value, grad=payload.grad, of=of, name=f"mean_{of}"
-    )
+    return Functional(fn=payload.value, grad=payload.grad, of=of, name=f"mean_{of}")
 
 
 def group_gap(
@@ -263,9 +252,7 @@ def group_gap(
         Value kind the gap is computed over.
     """
     payload = _GroupGap(_two_groups(groups), keep)
-    return Functional(
-        fn=payload.value, grad=payload.grad, of=of, name="group_gap"
-    )
+    return Functional(fn=payload.value, grad=payload.grad, of=of, name="group_gap")
 
 
 def cohens_d(groups: ArrayLike) -> Functional:
@@ -285,9 +272,7 @@ def cohens_d(groups: ArrayLike) -> Functional:
     before acting.
     """
     payload = _CohensD(_two_groups(groups))
-    return Functional(
-        fn=payload.value, grad=payload.grad, of="scores", name="cohens_d"
-    )
+    return Functional(fn=payload.value, grad=payload.grad, of="scores", name="cohens_d")
 
 
 def worst_group_mean(
@@ -342,6 +327,4 @@ def auroc(pos_label) -> Functional:
     matrix work plus n exact evaluations at O(m log m) each.
     """
     payload = _Auroc(pos_label)
-    return Functional(
-        fn=payload.value, of="scores", differentiable=False, name="auroc"
-    )
+    return Functional(fn=payload.value, of="scores", differentiable=False, name="auroc")

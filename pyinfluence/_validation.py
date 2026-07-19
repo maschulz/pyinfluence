@@ -107,7 +107,7 @@ def check_is_fitted_model(model: BaseEstimator) -> None:
             raise ValueError(
                 f"Model {type(model).__name__} is not fitted. "
                 "Please call model.fit(X, y) before passing to an attributor."
-            )
+            ) from None
 
 
 def validate_labels_in_classes(
@@ -213,9 +213,7 @@ def warn_if_data_mismatch(model, X, y) -> None:
     from pyinfluence._utils import _compute_loss_sklearn, _quiet_sklearn
 
     try:
-        if is_classifier(model) and callable(
-            getattr(model, "predict_proba", None)
-        ):
+        if is_classifier(model) and callable(getattr(model, "predict_proba", None)):
             # NLL against the predict-the-class-frequencies baseline: far
             # more sensitive than accuracy (a mismatched model is
             # confidently wrong, blowing up NLL even at chance accuracy).
@@ -238,10 +236,7 @@ def warn_if_data_mismatch(model, X, y) -> None:
                 _, counts = np.unique(y_arr, return_counts=True)
                 baseline = counts.max() / y_arr.size
                 bad = score < baseline - 0.05
-                detail = (
-                    f"accuracy {score:.3f}, majority-class baseline "
-                    f"{baseline:.3f}"
-                )
+                detail = f"accuracy {score:.3f}, majority-class baseline {baseline:.3f}"
             else:
                 bad = score < -0.05
                 detail = f"R^2 = {score:.3f} (0 = predicting the mean)"
@@ -256,6 +251,7 @@ def warn_if_data_mismatch(model, X, y) -> None:
             "a Pipeline with a scaler) but fit() received the raw ones — "
             "pass the same transformed X the estimator was trained on.",
             UserWarning,
+            stacklevel=2,
         )
 
 
@@ -336,11 +332,10 @@ def influence_function_incompatibility(model: BaseEstimator) -> str | None:
         # deprecates penalty in favor of l1_ratio (0 = l2, 1 = l1).
         penalty = getattr(model, "penalty", "l2")
         l1_ratio = getattr(model, "l1_ratio", None)
-        if penalty in ("l1", "elasticnet") or (
-            l1_ratio is not None and l1_ratio > 0
-        ):
+        if penalty in ("l1", "elasticnet") or (l1_ratio is not None and l1_ratio > 0):
             descr = (
-                f"penalty={penalty!r}" if penalty in ("l1", "elasticnet")
+                f"penalty={penalty!r}"
+                if penalty in ("l1", "elasticnet")
                 else f"l1_ratio={l1_ratio!r}"
             )
             return (
@@ -482,6 +477,7 @@ def validate_model(model: BaseEstimator) -> ModelType:
             "Estimates carry a small O(1/(C*n)) bias; consider solver='lbfgs' "
             "for exact agreement.",
             UserWarning,
+            stacklevel=2,
         )
 
     # Warn if no regularization
@@ -493,6 +489,7 @@ def validate_model(model: BaseEstimator) -> ModelType:
             "stability. Consider using Ridge instead of LinearRegression, or "
             "setting C < inf for LogisticRegression.",
             UserWarning,
+            stacklevel=2,
         )
 
     return model_type
