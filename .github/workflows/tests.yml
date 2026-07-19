@@ -27,8 +27,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -e ".[dev]" mypy
-      - run: ruff check pyinfluence/ tests/
-      - run: ruff format --check pyinfluence/ tests/
+      - run: ruff check .
+      - run: ruff format --check .
       - name: mypy (non-blocking)
         run: mypy pyinfluence
         continue-on-error: true

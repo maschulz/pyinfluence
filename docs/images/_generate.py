@@ -39,8 +39,14 @@ attr = InfluenceFunctions(mode="loss", damping=1e-3).fit(model, X_train, y_train
 # --- report dashboard ---------------------------------------------------------
 train_err = np.abs(model.predict(X_train) - y_train)
 fig = viz.report(
-    attr, X_test, y_test, groups=sources, errors=train_err,
-    test_idx=int(np.argmax(np.abs(model.predict(X_test) - y_test))), k=8, top_k=20,
+    attr,
+    X_test,
+    y_test,
+    groups=sources,
+    errors=train_err,
+    test_idx=int(np.argmax(np.abs(model.predict(X_test) - y_test))),
+    k=8,
+    top_k=20,
 )
 fig.savefig(OUT / "report.png", dpi=110, bbox_inches="tight")
 plt.close(fig)
@@ -48,8 +54,13 @@ plt.close(fig)
 # --- validation curves: removal + detection -----------------------------------
 fig, axes = plt.subplots(1, 2, figsize=(11, 4))
 curve = removal_curve(
-    attr, X_test, y_test, fractions=np.linspace(0.0, 0.3, 7),
-    direction="harmful", n_random=5, random_state=0,
+    attr,
+    X_test,
+    y_test,
+    fractions=np.linspace(0.0, 0.3, 7),
+    direction="harmful",
+    n_random=5,
+    random_state=0,
 )
 viz.plot_removal_curve(curve, ax=axes[0])
 
