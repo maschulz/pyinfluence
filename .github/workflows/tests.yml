@@ -55,7 +55,22 @@ jobs:
       - name: Run tests
         env:
           PYTHONUNBUFFERED: 1
-        run: pytest
+        run: pytest --cov-report=xml
+      - name: Upload coverage report
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+      - name: Upload test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results-${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            .coverage
+          retention-days: 7
 
   pytest-viz:
     runs-on: ubuntu-latest
