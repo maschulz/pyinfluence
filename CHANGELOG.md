@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Minimum supported dependency versions: scikit-learn 1.2, joblib 1.1.1,
+  numpy 1.21.2, scipy 1.7.2. The previous floors had no wheels for Python
+  3.10, and the suite does not pass below scikit-learn 1.2, which is where
+  `LogisticRegression(penalty=None)` was added.
+
 ## 0.5.0 (2026-08-29)
 
 These fixes change numerical results: refit-based loss magnitudes halve, and

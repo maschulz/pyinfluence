@@ -25,11 +25,14 @@ classifiers = [
 ]
 keywords = ["machine-learning", "interpretability", "influence-functions", "sklearn"]
 
+# Floors are the oldest releases the suite passes on that also have cp310
+# wheels; pytest-min-deps installs exactly these. scikit-learn below 1.2 has no
+# LogisticRegression(penalty=None), and 1.2 itself requires joblib >= 1.1.1.
 dependencies = [
-    "joblib>=1.0",
-    "numpy>=1.20",
-    "scipy>=1.7",
-    "scikit-learn>=1.0",
+    "joblib>=1.1.1",
+    "numpy>=1.21.2",
+    "scipy>=1.7.2",
+    "scikit-learn>=1.2",
     "tqdm>=4.60",
 ]
 
@@ -115,10 +118,10 @@ channels = ["conda-forge"]
 platforms = ["osx-arm64", "osx-64", "linux-64"]
 
 [tool.pixi.dependencies]
-joblib = ">=1.0"
-numpy = ">=1.20"
-scipy = ">=1.7"
-scikit-learn = ">=1.0"
+joblib = ">=1.1.1"
+numpy = ">=1.21.2"
+scipy = ">=1.7.2"
+scikit-learn = ">=1.2"
 tqdm = ">=4.60"
 ipykernel = ">=6.30.1,<8"
 
