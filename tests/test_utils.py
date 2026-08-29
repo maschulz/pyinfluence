@@ -633,23 +633,24 @@ class TestComputeLossSklearnFallback:
     def test_classifier_without_predict_proba_uses_decision_function(
         self, binary_classification_data
     ):
-        """Fallback should use squared error on decision_function vs binarized y."""
+        """Fallback uses HALF squared error on decision_function vs binarized y,
+        matching the influence-function loss scale."""
         X_train, X_test, y_train, y_test = binary_classification_data
         model = RidgeClassifier(alpha=1.0).fit(X_train, y_train)
         with pytest.warns(UserWarning):
             loss = _compute_loss_sklearn(model, X_test, y_test, is_classifier=True)
-        # Manually compute expected: squared error on decision_function values
         decision = model.decision_function(X_test)
         y_binary = np.where(y_test == model.classes_[1], 1.0, -1.0)
-        expected = (y_binary - decision) ** 2
+        expected = 0.5 * (y_binary - decision) ** 2
         np.testing.assert_allclose(loss, expected)
 
-    def test_regressor_unchanged(self, regression_data):
-        """Regression models should still use squared error (no change)."""
+    def test_regressor_uses_half_squared_error(self, regression_data):
+        """Regression loss is ½(y - ŷ)², matching InfluenceFunctions so refit
+        and closed-form loss scores share one scale."""
         X_train, X_test, y_train, y_test = regression_data
         model = Ridge(alpha=1.0).fit(X_train, y_train)
         loss = _compute_loss_sklearn(model, X_test, y_test, is_classifier=False)
-        expected = (y_test - model.predict(X_test)) ** 2
+        expected = 0.5 * (y_test - model.predict(X_test)) ** 2
         np.testing.assert_allclose(loss, expected)
 
 
@@ -673,16 +674,19 @@ class TestGetPredictionValueFallback:
         with pytest.warns(UserWarning, match="decision_function"):
             _get_prediction_value(model, X_test, y_test)
 
-    def test_without_predict_proba_returns_decision_function(
+    def test_without_predict_proba_returns_true_class_margin(
         self, binary_classification_data
     ):
-        """Fallback should return raw decision_function values."""
+        """Fallback returns the decision_function margin toward the TRUE class:
+        +decision for positive-class points, -decision for negative-class ones
+        (mirroring the predict_proba path's probability of the true class)."""
         X_train, X_test, y_train, y_test = binary_classification_data
         model = RidgeClassifier(alpha=1.0).fit(X_train, y_train)
         with pytest.warns(UserWarning):
             values = _get_prediction_value(model, X_test, y_test)
-        expected = model.decision_function(X_test).ravel()
-        np.testing.assert_allclose(values, expected)
+        decision = model.decision_function(X_test).ravel()
+        sign = np.where(y_test == model.classes_[1], 1.0, -1.0)
+        np.testing.assert_allclose(values, sign * decision)
 
 
 class TestValueAtTestFallback:
@@ -698,15 +702,16 @@ class TestValueAtTestFallback:
         assert np.all(values >= 0)
 
     def test_prediction_mode_fallback(self, binary_classification_data):
-        """Prediction mode should fall back to decision_function values."""
+        """Prediction mode returns the true-class decision_function margin."""
         X_train, X_test, y_train, y_test = binary_classification_data
         model = RidgeClassifier(alpha=1.0).fit(X_train, y_train)
         with pytest.warns(UserWarning, match="decision_function"):
             values = _value_at_test(
                 model, X_test, y_test, "prediction", is_classifier=True
             )
-        expected = model.decision_function(X_test).ravel()
-        np.testing.assert_allclose(values, expected)
+        decision = model.decision_function(X_test).ravel()
+        sign = np.where(y_test == model.classes_[1], 1.0, -1.0)
+        np.testing.assert_allclose(values, sign * decision)
 
     def test_no_predict_proba_no_decision_function_raises(self):
         """Classifier with neither method should raise ValueError."""

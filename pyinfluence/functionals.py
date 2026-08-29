@@ -287,8 +287,16 @@ def worst_group_mean(
     """
     g = np.asarray(groups).ravel()
     payload = _WorstGroupMean([g == u for u in np.unique(g)], g.size)
+    # A max over groups is piecewise linear with a kink wherever the worst
+    # group changes; the subgradient at the current argmax mispredicts removals
+    # that cross a tie. Mark it non-differentiable so the engine attributes it
+    # by exact perturbation evaluation, which sees the argmax switch.
     return Functional(
-        fn=payload.value, grad=payload.grad, of=of, name="worst_group_mean"
+        fn=payload.value,
+        grad=payload.grad,
+        of=of,
+        name="worst_group_mean",
+        differentiable=False,
     )
 
 
@@ -302,10 +310,14 @@ def auroc(pos_label) -> Functional:
     :class:`~pyinfluence.FunctionalInfluence` attributes it by exact
     re-evaluation on linearized per-removal score perturbations (a rank
     statistic is piecewise constant, so it is marked
-    ``differentiable=False`` and the engine skips the chain rule). This
-    agrees with exact leave-one-out refitting at r > 0.99 (enforced in
-    the test suite) and preserves the discreteness of the estimand:
-    removals that swap no (positive, negative) pair score exactly 0.
+    ``differentiable=False`` and the engine skips the chain rule). On the
+    package's benchmark this matches exact leave-one-out refitting at
+    r > 0.99, but the perturbation approximation is dataset-dependent: on
+    small or high-leverage problems the per-point correlation can be far
+    lower, so validate on your own data against
+    :class:`~pyinfluence.RefitFunctionalInfluence` before trusting the
+    rankings. It preserves the discreteness of the estimand: removals that
+    swap no (positive, negative) pair score exactly 0.
 
     Parameters
     ----------

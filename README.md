@@ -285,7 +285,7 @@ Ready-made builders live in **`pyinfluence.functionals`**, domain-neutral, all w
 | `group_gap(groups, keep=None, of)` | difference in group means, optionally label-conditioned |
 | `cohens_d(groups)` | standardized group gap (pooled-SD normalized) |
 | `worst_group_mean(groups, of)` | max over groups of the group mean |
-| `auroc(pos_label)` | ranking quality: the exact Mann–Whitney AUROC. Attributed by perturbation evaluation (below), tracking exact-refit ground truth at r > 0.99 while preserving the estimand's quantization (removals that swap no pair score exactly 0). |
+| `auroc(pos_label)` | ranking quality: the exact Mann–Whitney AUROC. Attributed by perturbation evaluation (below). It preserves the estimand's quantization (removals that swap no pair score exactly 0); the perturbation approximation matches exact-refit ground truth at r > 0.99 on the package benchmark, but is dataset-dependent — on small or high-leverage problems the per-point correlation can be much lower, so validate against `RefitFunctionalInfluence` on your data. |
 
 All builders (and fitted attributors holding them) are picklable, so expensive refit attributors can be persisted with joblib. Every builder is validated against exact refitting (correlation and slope ≈ 1) in `tests/`; the refit estimator doubles as ground truth for any functional you write yourself. Caveat for scale-normalized statistics like Cohen's d: a point can shrink the standardized gap by inflating within-group variance rather than closing the gap. Read the raw `group_gap` attribution alongside.
 

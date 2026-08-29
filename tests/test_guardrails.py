@@ -8,9 +8,14 @@ import warnings
 import numpy as np
 import pytest
 import scipy.sparse
-from sklearn.datasets import make_classification
+from sklearn.datasets import make_classification, make_regression
 from sklearn.kernel_ridge import KernelRidge
-from sklearn.linear_model import LogisticRegression, Ridge, RidgeClassifier
+from sklearn.linear_model import (
+    LinearRegression,
+    LogisticRegression,
+    Ridge,
+    RidgeClassifier,
+)
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -214,3 +219,90 @@ def test_kernel_ridge_callable_kernel_matches_sklearn_and_does_not_raise():
     attr.fit(model, X, y)
     scores = attr.explain(X[:5], y[:5])
     assert scores.shape == (5, 30)
+
+
+# -----------------------------------------------------------------------------
+# X / y length mismatch is rejected (fit and explain), not silently broadcast
+# -----------------------------------------------------------------------------
+
+
+class TestLengthMismatchRejected:
+    def test_fit_rejects_row_count_mismatch(self):
+        X, y = make_regression(n_samples=20, n_features=4, random_state=0)
+        model = Ridge().fit(X, y)
+        with pytest.raises(ValueError, match="rows|elements|training example"):
+            InfluenceFunctions(mode="loss").fit(model, X[:12], y[:1])
+
+    def test_explain_rejects_scalar_y_test_broadcast(self):
+        X, y = make_regression(n_samples=40, n_features=4, random_state=0)
+        model = Ridge().fit(X, y)
+        attr = InfluenceFunctions(mode="loss").fit(model, X, y)
+        with pytest.raises(ValueError, match="test point|rows|elements"):
+            attr.explain(X[:4], y[0])  # scalar label silently spread over 4 rows
+
+    def test_single_point_scalar_y_test_still_works(self):
+        X, y = make_regression(n_samples=40, n_features=4, random_state=0)
+        model = Ridge().fit(X, y)
+        attr = InfluenceFunctions(mode="loss").fit(model, X, y)
+        scores = attr.explain(X[0], y[0])  # one point, scalar label: legitimate
+        assert scores.shape == (1, 40)
+
+
+# -----------------------------------------------------------------------------
+# positive=True (NNLS / constrained) models: rejected by IF, fall back under auto
+# -----------------------------------------------------------------------------
+
+
+class TestPositiveConstrainedRejected:
+    def test_influence_functions_fit_raises_on_positive_ridge(self):
+        X, y = make_regression(n_samples=40, n_features=4, random_state=0)
+        model = Ridge(positive=True).fit(X, y)
+        with pytest.raises(ValueError, match="positive=True"):
+            InfluenceFunctions(mode="loss").fit(model, X, y)
+
+    def test_supports_false_for_positive_linear(self):
+        from pyinfluence._validation import supports
+
+        X, y = make_regression(n_samples=40, n_features=4, random_state=0)
+        model = LinearRegression(positive=True).fit(X, y)
+        ok, reason = supports(model)
+        assert ok is False
+        assert "positive=True" in reason
+
+    def test_auto_falls_back_for_positive_ridge(self):
+        X, y = make_regression(n_samples=60, n_features=4, random_state=0)
+        model = Ridge(positive=True).fit(X, y)
+        with pytest.warns(UserWarning, match="positive=True"):
+            scores = influence(
+                model,
+                X[:40],
+                y[:40],
+                X[40:],
+                y[40:],
+                method="auto",
+                mode="loss",
+            )
+        assert np.all(np.isfinite(scores))
+
+
+# -----------------------------------------------------------------------------
+# decision_function prediction fallback carries the true-class sign
+# -----------------------------------------------------------------------------
+
+
+class TestDecisionFunctionPredictionSign:
+    def test_true_class_value_negates_for_negative_class(self):
+        from pyinfluence._utils import _get_prediction_value
+
+        X, y = make_classification(
+            n_samples=60, n_features=5, n_informative=3, random_state=0
+        )
+        model = RidgeClassifier().fit(X, y)  # decision_function only, no proba
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            values = _get_prediction_value(model, X, y)
+        decision = model.decision_function(X)
+        pos = y == model.classes_[1]
+        # positive class: value == +decision; negative class: value == -decision
+        assert np.allclose(values[pos], decision[pos])
+        assert np.allclose(values[~pos], -decision[~pos])

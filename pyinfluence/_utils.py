@@ -115,9 +115,11 @@ def _compute_loss_sklearn(
     Compute per-sample loss for a sklearn model.
 
     Classification with predict_proba: negative log-likelihood of the true class.
-    Classification without predict_proba: squared error on decision_function values
-    (with a UserWarning, since this changes the loss semantics).
-    Regression: squared error.
+    Classification without predict_proba: half squared error on decision_function
+    values (with a UserWarning, since this changes the loss semantics).
+    Regression: half squared error, ½(y - ŷ)². The ½ matches the influence-
+    function loss convention so closed-form (InfluenceFunctions) and refit-based
+    (LOO/Banzhaf/Bootstrap) loss scores share a single scale.
 
     Parameters
     ----------
@@ -165,11 +167,11 @@ def _compute_loss_sklearn(
             decision = np.asarray(model.decision_function(X), dtype=float).ravel()
         # Binarize y to {-1, +1} using the model's class ordering
         y_binary = np.where(y == model.classes_[1], 1.0, -1.0)
-        return (y_binary - decision) ** 2
+        return 0.5 * (y_binary - decision) ** 2
 
     with _quiet_sklearn():
         predictions = model.predict(X)
-    return (y - predictions) ** 2
+    return 0.5 * (y - predictions) ** 2
 
 
 def _get_prediction_value(
@@ -217,7 +219,14 @@ def _get_prediction_value(
         stacklevel=2,
     )
     with _quiet_sklearn():
-        return np.asarray(model.decision_function(X), dtype=float).ravel()
+        decision = np.asarray(model.decision_function(X), dtype=float).ravel()
+    # decision_function is the signed margin toward classes_[1] (the positive
+    # class). The true-class margin is +decision for positive-class points and
+    # -decision for negative-class points, mirroring the predict_proba path,
+    # which returns the probability *of the true class*. Without this sign,
+    # prediction-mode influence is inverted for every negative-class point.
+    true_class_sign = np.where(np.asarray(y).ravel() == model.classes_[1], 1.0, -1.0)
+    return true_class_sign * decision
 
 
 def _value_at_test(

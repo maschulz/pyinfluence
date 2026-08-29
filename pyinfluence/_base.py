@@ -125,7 +125,13 @@ def _prepare_fit_inputs(
             f"Multi-output y (shape {y.shape}) is not supported. "
             "Fit one model per output and attribute each separately."
         )
-    return X, y.ravel()
+    y = y.ravel()
+    if X.shape[0] != y.shape[0]:
+        raise ValueError(
+            f"X has {X.shape[0]} rows but y has {y.shape[0]} elements; "
+            "X and y must have the same number of training examples."
+        )
+    return X, y
 
 
 def _prepare_explain_inputs(
@@ -164,6 +170,11 @@ def _prepare_explain_inputs(
             y_test = y_test.reshape(1)
         else:
             y_test = y_test.ravel()
+        if y_test.shape[0] != X_test.shape[0]:
+            raise ValueError(
+                f"X_test has {X_test.shape[0]} rows but y_test has "
+                f"{y_test.shape[0]} elements; they must align by test point."
+            )
     if needs_y_test and y_test is None:
         raise ValueError(
             error_msg or "y_test is required for this mode. Provide y_test."

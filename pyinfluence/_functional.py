@@ -385,7 +385,14 @@ class FunctionalInfluence:
             X_ref = X_ref.reshape(1, -1)
         y_arr = None if y_ref is None else np.asarray(y_ref).ravel()
 
-        if not func.differentiable:
+        # target="absolute" wraps the functional in |.|, which has a kink at
+        # F=0. The chain-rule linearization applies sign(F) to the gradient and
+        # so mispredicts any removal that crosses zero — common near parity,
+        # exactly where absolute fairness gaps are audited. Evaluate the
+        # absolute functional exactly via perturbation instead, which sees the
+        # crossing. Non-differentiable functionals (rank statistics, and the
+        # max in worst_group_mean) use the same exact path.
+        if not func.differentiable or target == "absolute":
             return self._perturbation_scores(func, X_ref, y_arr, target)
 
         base = self.base_attributor_
@@ -418,10 +425,12 @@ class FunctionalInfluence:
         so the value perturbation enters with a plus sign)
 
         This preserves the discrete structure of rank statistics (removals
-        that swap no pairs score exactly 0) and matches exact-refit ground
-        truth at r > 0.99 for the exact AUROC (enforced in the test
-        suite). Column
-        blocks keep memory at O(m x block) instead of O(m x n).
+        that swap no pairs score exactly 0). On the package's benchmark it
+        matches exact-refit ground truth at r > 0.99 for the exact AUROC,
+        but the linearization is dataset-dependent and can correlate poorly
+        on small or high-leverage problems; validate against
+        RefitFunctionalInfluence on your data. Column blocks keep memory at
+        O(m x block) instead of O(m x n).
         """
         base = self.base_attributor_
         model = self.model_
@@ -529,8 +538,8 @@ class FunctionalInfluence:
             # class p refers to), not the raw label values.
             y01 = (np.asarray(y).ravel() == model.classes_[1]).astype(float)
             return -X_aug * (y01 - p)[:, None]
-        # squared-error models: _compute_loss_sklearn uses the *unhalved*
-        # squared error, so the matching gradient carries a factor 2
+        # squared-error models use the half-squared-error loss ½(y - ŷ)²
+        # (matching _compute_loss_sklearn), whose gradient is -(y - ŷ)x
         theta = (
             np.concatenate(
                 [
@@ -546,7 +555,7 @@ class FunctionalInfluence:
         else:
             yv = np.asarray(y).ravel()
         resid = yv - X_aug @ theta
-        return -2.0 * X_aug * resid[:, None]
+        return -X_aug * resid[:, None]
 
 
 # -----------------------------------------------------------------------------

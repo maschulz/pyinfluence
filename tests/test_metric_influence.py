@@ -155,7 +155,33 @@ def test_absolute_target_scales_by_sign(clf_problem):
     val = disparity_value(model, Xa, a, metric=F)
     s_signed = FunctionalInfluence(F, target="signed").fit(model, X, y).explain(Xa)
     s_abs = FunctionalInfluence(F, target="absolute").fit(model, X, y).explain(Xa)
-    np.testing.assert_allclose(s_abs, np.sign(val) * s_signed)
+    # Away from F=0, |F| is smooth and its removal effect is sign(F) times the
+    # signed effect. absolute now routes through perturbation evaluation (exact
+    # for the value change) while signed uses the chain rule, so the two agree
+    # to first order, not identically.
+    expected = np.sign(val) * s_signed
+    assert np.corrcoef(s_abs, expected)[0, 1] > 0.99
+
+
+def test_absolute_near_parity_signs_match_refit():
+    """Near F=0, |F| has a kink; a sign(F)*grad linearization gets the sign
+    wrong for removals that cross zero. Perturbation evaluation handles the
+    crossing, so near parity the closed-form absolute attribution must agree in
+    sign with exact refit."""
+    rng = np.random.default_rng(26)
+    n = 50
+    X = rng.normal(size=(n, 4))
+    beta = rng.normal(size=4)
+    y = (rng.uniform(size=n) < 1 / (1 + np.exp(-X @ beta))).astype(int)
+    a = rng.integers(0, 2, size=n)
+    model = LogisticRegression(max_iter=2000).fit(X, y)
+
+    F = cohens_d(a)  # near parity: |F| ~ 5e-3 here
+    approx = FunctionalInfluence(F, target="absolute").fit(model, X, y).explain(X)
+    exact = RefitFunctionalInfluence(F, target="absolute").fit(model, X, y).explain(X)
+    mask = np.abs(exact) > 1e-6
+    sign_agree = np.mean(np.sign(approx[mask]) == np.sign(exact[mask]))
+    assert sign_agree > 0.9, f"near-parity sign agreement {sign_agree:.2f}"
 
 
 def test_subsampled_functional_metric(clf_problem):

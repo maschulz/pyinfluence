@@ -315,6 +315,16 @@ def influence_function_incompatibility(model: BaseEstimator) -> str | None:
     """
     model_type = get_model_type(model)
 
+    if getattr(model, "positive", False):
+        return (
+            "the model was fit with positive=True, a nonnegativity-constrained "
+            "(NNLS) fit whose solution does not satisfy the unconstrained normal "
+            "equations that the closed form assumes, so its scores would be "
+            "wrong. Refit-based methods (LOOInfluence, BanzhafInfluence, "
+            "BootstrapInfluence) refit the constrained model and handle it "
+            "correctly"
+        )
+
     if model_type in ("logistic", "ridge_classifier"):
         class_weight = getattr(model, "class_weight", None)
         if class_weight is not None:

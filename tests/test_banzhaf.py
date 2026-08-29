@@ -413,7 +413,9 @@ class TestBanzhafUnbiasedness:
         model = Ridge(alpha=1.0).fit(X_train, y_train)
 
         def loss(m, Xt, yt):
-            return (yt - m.predict(Xt)) ** 2
+            # half squared error, matching the ½(y - ŷ)² convention the
+            # attributors use (see _compute_loss_sklearn)
+            return 0.5 * (yt - m.predict(Xt)) ** 2
 
         n = 4
         exact = np.empty(n)
