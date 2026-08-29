@@ -84,9 +84,15 @@ class BootstrapInfluence(BaseAttributor):
 
     Trains B models on bootstrap samples. For each training point i, influence
     is the mean loss (or prediction) over runs where i was out-of-bag minus
-    the mean over runs where i was in-bag. Fair "with vs without" comparison:
-    both use ~63% of data; only difference is whether i is in the sample.
-    Positive = helpful.
+    the mean over runs where i was in-bag. Positive = helpful.
+
+    This is a presence-vs-absence contrast, but not a clean one-point effect:
+    conditional on being in-bag, a point appears with expected multiplicity
+    ``1 / (1 - (1 - 1/n) ** n) ≈ 1.58``, so magnitudes are inflated by roughly
+    that factor relative to a single-point (leave-one-out) removal, and the
+    factor depends on n and the model's nonlinearity. Treat the *ranking* as
+    the reliable output; for calibrated magnitudes use ``LOOInfluence`` or
+    ``RefitFunctionalInfluence``.
 
     Parameters
     ----------

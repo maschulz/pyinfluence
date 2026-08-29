@@ -221,6 +221,14 @@ def influence(
             )
         attr_kwargs = {"mode": mode, **kwargs}
 
+    # The one-shot bootstrap path — including the silent auto->bootstrap
+    # fallback for unsupported models — is seeded and uses more runs by
+    # default so results are reproducible and less noisy. An explicit
+    # random_state / n_estimators passed by the caller still wins.
+    if attributor_cls is BootstrapInfluence:
+        attr_kwargs.setdefault("random_state", 0)
+        attr_kwargs.setdefault("n_estimators", 200)
+
     attributor = attributor_cls(**attr_kwargs)
     attributor.fit(model, X_train, y_train)
     scores = attributor.explain(X_test, y_test)

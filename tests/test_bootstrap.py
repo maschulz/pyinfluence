@@ -163,3 +163,24 @@ class TestBootstrapSelfInfluenceDiag:
         diag_direct = attr._self_influence_diag()
         full = attr.explain(X_train, y_train)
         np.testing.assert_allclose(diag_direct, np.diag(full), equal_nan=True)
+
+
+class TestAutoFallbackReproducible:
+    """The silent auto->bootstrap fallback is seeded by default, so two
+    identical calls agree; an unseeded default would differ each run."""
+
+    def test_auto_bootstrap_fallback_is_seeded(self):
+        from sklearn.datasets import make_regression
+
+        from pyinfluence import influence
+
+        X, y = make_regression(n_samples=60, n_features=5, random_state=0)
+        # RandomForestRegressor is an unsupported type, so method="auto"
+        # resolves to the bootstrap fallback. random_state is intentionally
+        # NOT passed; n_estimators is kept small only for speed.
+        model = RandomForestRegressor(n_estimators=8, random_state=0).fit(X, y)
+        kw = dict(method="auto", mode="loss", n_estimators=20)
+        with pytest.warns(UserWarning):
+            s1 = influence(model, X[:40], y[:40], X[40:], y[40:], **kw)
+            s2 = influence(model, X[:40], y[:40], X[40:], y[40:], **kw)
+        np.testing.assert_array_equal(s1, s2)
