@@ -4,6 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/pyinfluence)](https://pypi.org/project/pyinfluence/)
 [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue)](https://github.com/maschulz/pyinfluence/blob/main/pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/maschulz/pyinfluence/blob/main/LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22165461.svg)](https://doi.org/10.5281/zenodo.22165461)
 
 Training data attribution for scikit-learn estimators.
 
