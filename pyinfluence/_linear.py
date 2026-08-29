@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import warnings
-from typing import Union
 
 import numpy as np
 import scipy.linalg
@@ -13,7 +12,7 @@ from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge
 from sklearn.metrics.pairwise import pairwise_kernels
 
 # Type alias for linear models
-LinearModel = Union[Ridge, LinearRegression, LogisticRegression]
+LinearModel = Ridge | LinearRegression | LogisticRegression
 
 # Condition number threshold for warning
 _CONDITION_NUMBER_THRESHOLD: float = 1e10

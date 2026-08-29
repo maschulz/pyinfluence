@@ -547,7 +547,7 @@ def influence_summary(
         }
 
     percentile_values = np.percentile(valid, percentiles)
-    percentile_dict = dict(zip(percentiles, percentile_values))
+    percentile_dict = dict(zip(percentiles, percentile_values, strict=True))
 
     # Sparsity: fraction of values within threshold of zero
     n_zero = np.sum(np.abs(valid) <= zero_threshold)

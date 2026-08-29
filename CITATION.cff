@@ -9,7 +9,7 @@ authors:
     orcid: "https://orcid.org/0000-0002-1140-1841"
 repository-code: "https://github.com/maschulz/pyinfluence"
 license: MIT
-version: 0.4.1
+version: 0.5.0
 date-released: 2026-08-29
 abstract: >-
   Training data attribution for scikit-learn estimators: closed-form

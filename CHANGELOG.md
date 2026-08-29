@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 (2026-08-29)
+
+### Removed (breaking)
+
+- Python 3.9 support. The minimum is now 3.10. 3.9 reached end of life in
+  October 2025.
+
+### Added
+
+- `py.typed`, so type checkers use the annotations in downstream code.
+
 ## 0.4.1 (2026-08-29)
 
 ### Changed

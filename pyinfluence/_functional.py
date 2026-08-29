@@ -38,8 +38,9 @@ functional's closed-form scores (correlation and slope ~ 1).
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from joblib import Parallel, delayed

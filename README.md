@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/maschulz/pyinfluence/actions/workflows/tests.yml/badge.svg)](https://github.com/maschulz/pyinfluence/actions/workflows/tests.yml)
 [![PyPI](https://img.shields.io/pypi/v/pyinfluence)](https://pypi.org/project/pyinfluence/)
-[![Python](https://img.shields.io/badge/python-3.9%E2%80%933.13-blue)](https://github.com/maschulz/pyinfluence/blob/main/pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue)](https://github.com/maschulz/pyinfluence/blob/main/pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/maschulz/pyinfluence/blob/main/LICENSE)
 
 Training data attribution for scikit-learn estimators.

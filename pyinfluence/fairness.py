@@ -57,7 +57,8 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
-from typing import Callable, Literal
+from collections.abc import Callable
+from typing import Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray

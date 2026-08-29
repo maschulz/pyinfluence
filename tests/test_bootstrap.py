@@ -31,7 +31,7 @@ class TestBootstrapIndices:
         rng2 = np.random.default_rng(0)
         list1 = _bootstrap_indices(50, 5, rng1)
         list2 = _bootstrap_indices(50, 5, rng2)
-        for a, b in zip(list1, list2):
+        for a, b in zip(list1, list2, strict=True):
             np.testing.assert_array_equal(a, b)
 
 
