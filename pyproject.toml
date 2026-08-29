@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyinfluence"
-version = "0.4.0"
+version = "0.4.1"
 description = "Training data attribution for scikit-learn models"
 readme = "README.md"
 license = {text = "MIT"}

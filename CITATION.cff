@@ -6,10 +6,11 @@ authors:
   - family-names: Schulz
     given-names: Marc-Andre
     email: marc.a.schulz@gmail.com
+    orcid: "https://orcid.org/0000-0002-1140-1841"
 repository-code: "https://github.com/maschulz/pyinfluence"
 license: MIT
-version: 0.4.0
-date-released: 2026-07-15
+version: 0.4.1
+date-released: 2026-08-29
 abstract: >-
   Training data attribution for scikit-learn estimators: closed-form
   influence functions, exact leave-one-out retraining, Data Banzhaf and

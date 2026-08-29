@@ -1,8 +1,11 @@
 {
   "title": "pyinfluence: training data attribution for scikit-learn",
   "upload_type": "software",
+  "description": "Training data attribution for scikit-learn estimators: closed-form influence functions, exact leave-one-out retraining, Data Banzhaf and bootstrap out-of-bag estimators, and a functional-influence engine that attributes scalar model properties (fairness disparities, AUROC, worst-group loss) to individual training examples.",
   "license": "MIT",
-  "creators": [{"name": "Schulz, Marc-Andre"}],
+  "creators": [
+    {"name": "Schulz, Marc-Andre", "orcid": "0000-0002-1140-1841"}
+  ],
   "keywords": ["machine learning", "interpretability", "influence functions",
                "training data attribution", "fairness", "scikit-learn"]
 }

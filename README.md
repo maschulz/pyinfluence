@@ -142,7 +142,7 @@ viz.plot_top_k_stability(reps, k=8)
 fig = viz.report(attr, X_test, y_test)   # returns a bare Figure (no axes)
 ```
 
-Section 4 of [`examples/showcase.ipynb`](examples/showcase.ipynb) walks
+Section 4 of [`examples/showcase.ipynb`](https://github.com/maschulz/pyinfluence/blob/main/examples/showcase.ipynb) walks
 through this end to end.
 
 ### 3) Comparing methods on the same problem
@@ -343,7 +343,7 @@ Plotting requires matplotlib ≥ 3.9 (`pip install "pyinfluence[viz]"`). Each fu
 | `plot_top_k_stability(replicate_scores, k=10)` | Check rank-stability across resampling replicates. Pair with the `stability_replicates(attr, ...)` util. |
 | `report(attr, X_test, y_test, ...)` | Four-panel diagnostic dashboard in one call. Returns a bare `Figure`; per-test-point attributors only (functional attributors: use `plot_top_influencers` / `plot_disparity_curve`). |
 
-See [`examples/showcase.ipynb`](examples/showcase.ipynb) for an end-to-end walkthrough.
+See [`examples/showcase.ipynb`](https://github.com/maschulz/pyinfluence/blob/main/examples/showcase.ipynb) for an end-to-end walkthrough.
 
 ![Diagnostic report dashboard](https://raw.githubusercontent.com/maschulz/pyinfluence/main/docs/images/report.png)
 

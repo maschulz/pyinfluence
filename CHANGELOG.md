@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 (2026-08-29)
+
+### Changed
+
+- Warnings now set `stacklevel=2`, so they point at the calling code
+  instead of pyinfluence internals.
+
+### Maintenance
+
+- Stricter linting (ruff bugbear and comprehension rules) plus format and
+  type checks enforced in CI across Python 3.9–3.13.
+
 ## 0.4.0 (2026-07-15)
 
 ### Changed (breaking)
