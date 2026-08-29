@@ -2,6 +2,10 @@
 
 ## 0.5.0 (2026-08-29)
 
+These fixes change numerical results: refit-based loss magnitudes halve, and
+some negative-class and near-parity signs change. Re-run analyses that pinned
+scores from an earlier version.
+
 ### Removed (breaking)
 
 - Python 3.9 support. The minimum is now 3.10. 3.9 reached end of life in
@@ -10,6 +14,45 @@
 ### Added
 
 - `py.typed`, so type checkers use the annotations in downstream code.
+
+### Fixed
+
+- Loss scores now use half squared error throughout. The refit-based
+  attributors (`LOOInfluence`, `BanzhafInfluence`, `BootstrapInfluence`) and
+  loss functionals measured the full squared error, while `InfluenceFunctions`
+  differentiates the half-squared-error loss; both now use half squared error,
+  so every method shares one scale. Rankings are unchanged, but refit-based
+  loss magnitudes and summed effects are now half their previous values.
+- Prediction-mode influence for classifiers without `predict_proba` (e.g.
+  `RidgeClassifier`) now uses the margin toward the *true* class. Scores for
+  negative-class test points flip sign relative to earlier versions, which
+  returned the raw positive-class margin regardless of the label.
+- `target="absolute"` and `worst_group_mean` are attributed by exact
+  perturbation evaluation instead of a first-order linearization. Scores change
+  near a zero crossing (absolute) or a group tie (worst-group) — where the old
+  linearization mispredicted the sign; away from those points they are
+  unchanged.
+- The `influence(method="auto")` bootstrap fallback for unsupported models is
+  seeded (`random_state=0`) and uses 200 runs instead of an unseeded 50, so
+  results are reproducible. Pass `random_state` / `n_estimators` to override.
+- `fit` and `explain` raise when `X` and `y` have mismatched row counts.
+  Previously a mismatched or scalar label was silently broadcast into a finite
+  but wrong score matrix.
+- `InfluenceFunctions` rejects `Ridge` / `LinearRegression` fit with
+  `positive=True`; the closed-form Hessian does not represent the constrained
+  (NNLS) objective. `method="auto"` falls back to a refit method, which refits
+  the constraint correctly.
+
+### Documentation
+
+- The AUROC attribution's agreement with exact refit (r > 0.99) is documented
+  as a property of the package benchmark, not a general guarantee: the
+  perturbation approximation is dataset-dependent and can correlate poorly on
+  small or high-leverage problems, so validate against `RefitFunctionalInfluence`
+  on your own data.
+- `BootstrapInfluence` documents that a point's in-bag multiplicity (~1.58 on
+  average) inflates its magnitude, so the ranking is the reliable output; use
+  `LOOInfluence` or `RefitFunctionalInfluence` for calibrated magnitudes.
 
 ## 0.4.1 (2026-08-29)
 
