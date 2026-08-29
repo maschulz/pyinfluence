@@ -56,8 +56,10 @@ If you will explain multiple test sets, request the fitted attributor:
 ```python
 scores, attr = influence(
     model,
-    X_train, y_train,
-    X_test, y_test,
+    X_train,
+    y_train,
+    X_test,
+    y_test,
     method="auto",
     mode="loss",
     return_attributor=True,
@@ -128,18 +130,22 @@ from pyinfluence import InfluenceFunctions, LOOInfluence, stability_replicates
 from pyinfluence import compare_attributors, viz
 
 attr = InfluenceFunctions(mode="loss", damping=1e-5).fit(model, X_train, y_train)
-i = int(np.argmax(np.abs(model.predict(X_test) - y_test)))   # worst test case
+i = int(np.argmax(np.abs(model.predict(X_test) - y_test)))  # worst test case
 
 scores = attr.explain(X_test[[i]], y_test[[i]])
-viz.plot_top_influencers(scores, k=8)                        # who drove it
+viz.plot_top_influencers(scores, k=8)  # who drove it
 
 # how sure are we? (1) slow method agrees, (2) ranking survives resampling
-stats = compare_attributors(attr, LOOInfluence(mode="loss", verbose=0).fit(
-    model, X_train, y_train), X_test[[i]], y_test[[i]])
+stats = compare_attributors(
+    attr,
+    LOOInfluence(mode="loss", verbose=0).fit(model, X_train, y_train),
+    X_test[[i]],
+    y_test[[i]],
+)
 reps = stability_replicates(attr, X_test[[i]], y_test[[i]], n_replicates=20)
 viz.plot_top_k_stability(reps, k=8)
 
-fig = viz.report(attr, X_test, y_test)   # returns a bare Figure (no axes)
+fig = viz.report(attr, X_test, y_test)  # returns a bare Figure (no axes)
 ```
 
 Section 4 of [`examples/showcase.ipynb`](https://github.com/maschulz/pyinfluence/blob/main/examples/showcase.ipynb) walks
@@ -248,8 +254,10 @@ from pyinfluence import influence
 
 scores = influence(
     model,
-    X_train, y_train,
-    X_test, y_test,
+    X_train,
+    y_train,
+    X_test,
+    y_test,
     method="auto",
     fallback="bootstrap",
     mode="loss",
@@ -302,19 +310,21 @@ from pyinfluence import FunctionalInfluence
 from pyinfluence.fairness import disparity, disparity_removal_curve
 
 X, y = make_classification(n_samples=600, n_features=8, random_state=0)
-X_train, X_audit, y_train, y_audit = train_test_split(X, y, test_size=0.4,
-                                                      random_state=0)
+X_train, X_audit, y_train, y_audit = train_test_split(
+    X, y, test_size=0.4, random_state=0
+)
 a_audit = (X_audit[:, 0] > 0).astype(int)  # the audit set's sensitive attribute
 
 model = LogisticRegression(C=1.0, max_iter=2000).fit(X_train, y_train)
 
-F = disparity("dp", a_audit)                     # bound to the audit rows
+F = disparity("dp", a_audit)  # bound to the audit rows
 attr = FunctionalInfluence(F, target="absolute").fit(model, X_train, y_train)
-scores = attr.explain(X_audit)                   # (n_train,)
+scores = attr.explain(X_audit)  # (n_train,)
 
 # retrain-validated repair curve: drop the most disparity-driving points
-curve = disparity_removal_curve(scores, model, X_train, y_train,
-                                X_audit, a_audit, y_audit=y_audit)
+curve = disparity_removal_curve(
+    scores, model, X_train, y_train, X_audit, a_audit, y_audit=y_audit
+)
 ```
 
 - `disparity(metric, sensitive, *, target_of=model | pos_label=...)`: "eopp"/"fpr" need the positive label, resolved from `model.classes_[1]` via `target_of` or given explicitly.
