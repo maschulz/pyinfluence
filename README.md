@@ -1,7 +1,7 @@
 # pyinfluence
 
 [![tests](https://github.com/maschulz/pyinfluence/actions/workflows/tests.yml/badge.svg)](https://github.com/maschulz/pyinfluence/actions/workflows/tests.yml)
-[![PyPI](https://img.shields.io/pypi/v/pyinfluence)](https://pypi.org/project/pyinfluence/)
+[![PyPI](https://img.shields.io/pypi/v/pyinfluence?color=blue)](https://pypi.org/project/pyinfluence/)
 [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue)](https://github.com/maschulz/pyinfluence/blob/main/pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/maschulz/pyinfluence/blob/main/LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22165461.svg)](https://doi.org/10.5281/zenodo.22165461)
@@ -20,8 +20,13 @@ Training data attribution for scikit-learn estimators.
 ## Installation
 
 ```bash
-pip install pyinfluence            # once published to PyPI
-pip install git+https://github.com/maschulz/pyinfluence   # until then
+pip install pyinfluence
+```
+
+To install the latest development version from GitHub:
+
+```bash
+pip install git+https://github.com/maschulz/pyinfluence
 ```
 
 Optional plotting utilities:
