@@ -35,9 +35,10 @@ scores from an earlier version.
 - The `influence(method="auto")` bootstrap fallback for unsupported models is
   seeded (`random_state=0`) and uses 200 runs instead of an unseeded 50, so
   results are reproducible. Pass `random_state` / `n_estimators` to override.
-- `fit` and `explain` raise when `X` and `y` have mismatched row counts.
-  Previously a mismatched or scalar label was silently broadcast into a finite
-  but wrong score matrix.
+- `fit`, `explain`, and `functional_value` raise when `X`/`y` (or a
+  functional's `X_ref`/`y_ref`) have mismatched row counts. Previously a
+  mismatched or scalar label was silently broadcast into a finite but wrong
+  result.
 - `InfluenceFunctions` rejects `Ridge` / `LinearRegression` fit with
   `positive=True`; the closed-form Hessian does not represent the constrained
   (NNLS) objective. `method="auto"` falls back to a refit method, which refits

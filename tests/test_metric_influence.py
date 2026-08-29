@@ -25,9 +25,10 @@ from pyinfluence import (
     FunctionalInfluence,
     RefitFunctionalInfluence,
     SubsampledFunctionalInfluence,
+    functional_value,
 )
 from pyinfluence.fairness import disparity, disparity_removal_curve, disparity_value
-from pyinfluence.functionals import cohens_d
+from pyinfluence.functionals import cohens_d, mean
 
 
 @pytest.fixture(scope="module")
@@ -259,3 +260,29 @@ def test_disparity_value_rejects_raw_callable(clf_problem):
 
     with pytest.raises(TypeError, match="Functional"):
         disparity_value(model, Xa, a, metric=raw_callable)
+
+
+def test_functional_apis_reject_ref_length_mismatch():
+    """The functional entry points normalize their own (X_ref, y_ref), so they
+    must apply the same alignment check as ordinary explain(): a mismatched or
+    scalar y_ref would otherwise broadcast into a finite but wrong result."""
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(30, 4))
+    y = rng.normal(size=30)
+    from sklearn.linear_model import Ridge
+
+    model = Ridge().fit(X, y)
+    F = mean(of="scores")
+    X_ref = rng.normal(size=(2, 4))  # two reference rows
+    y_ref = np.array([1.0])  # one label: mismatch
+
+    with pytest.raises(ValueError, match="reference row"):
+        functional_value(model, X_ref, F, y_ref)
+    with pytest.raises(ValueError, match="reference row"):
+        FunctionalInfluence(F).fit(model, X, y).explain(X_ref, y_ref)
+    with pytest.raises(ValueError, match="reference row"):
+        RefitFunctionalInfluence(F).fit(model, X, y).explain(X_ref, y_ref)
+    with pytest.raises(ValueError, match="reference row"):
+        SubsampledFunctionalInfluence(F, n_subsets=5, random_state=0, verbose=0).fit(
+            model, X, y
+        ).explain(X_ref, y_ref)

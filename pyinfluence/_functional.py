@@ -202,6 +202,30 @@ def _resolve_functional(default, override) -> Functional:
     return as_functional(functional)
 
 
+def _prepare_ref_inputs(
+    X_ref: ArrayLike, y_ref: ArrayLike | None
+) -> tuple[NDArray[np.floating], NDArray[np.floating] | None]:
+    """Normalize a functional's reference set and check X_ref/y_ref alignment.
+
+    A 1-D X_ref is one reference row; y_ref is raveled. Raises on a row-count
+    mismatch rather than letting NumPy broadcast a mismatched or scalar y_ref
+    into a finite but wrong result.
+    """
+    X_ref = np.asarray(X_ref)
+    if X_ref.ndim == 1:
+        X_ref = X_ref.reshape(1, -1)
+    if y_ref is None:
+        return X_ref, None
+    y_ref = np.asarray(y_ref)
+    y_ref = y_ref.reshape(1) if y_ref.ndim == 0 else y_ref.ravel()
+    if y_ref.shape[0] != X_ref.shape[0]:
+        raise ValueError(
+            f"X_ref has {X_ref.shape[0]} rows but y_ref has {y_ref.shape[0]} "
+            "elements; they must align by reference row."
+        )
+    return X_ref, y_ref
+
+
 def functional_value(
     model: BaseEstimator,
     X_ref: ArrayLike,
@@ -233,8 +257,8 @@ def functional_value(
     """
     func = as_functional(functional)
     _validate_target(target)
-    y_arr = None if y_ref is None else np.asarray(y_ref).ravel()
-    values = _model_values(model, np.asarray(X_ref), y_arr, func.of)
+    X_arr, y_arr = _prepare_ref_inputs(X_ref, y_ref)
+    values = _model_values(model, X_arr, y_arr, func.of)
     value = func(values, y_arr)
     return abs(value) if target == "absolute" else value
 
@@ -380,10 +404,7 @@ class FunctionalInfluence:
         func = _resolve_functional(self.functional, functional)
         target = self.target if target is None else target
         _validate_target(target)
-        X_ref = np.asarray(X_ref)
-        if X_ref.ndim == 1:
-            X_ref = X_ref.reshape(1, -1)
-        y_arr = None if y_ref is None else np.asarray(y_ref).ravel()
+        X_ref, y_arr = _prepare_ref_inputs(X_ref, y_ref)
 
         # target="absolute" wraps the functional in |.|, which has a kink at
         # F=0. The chain-rule linearization applies sign(F) to the gradient and
@@ -659,8 +680,7 @@ class RefitFunctionalInfluence:
         func = _resolve_functional(self.functional, functional)
         target = self.target if target is None else target
         _validate_target(target)
-        X_ref = np.asarray(X_ref)
-        y_arr = None if y_ref is None else np.asarray(y_ref).ravel()
+        X_ref, y_arr = _prepare_ref_inputs(X_ref, y_ref)
 
         def evaluate(model: BaseEstimator) -> float:
             values = _model_values(model, X_ref, y_arr, func.of)
@@ -802,8 +822,7 @@ class SubsampledFunctionalInfluence:
         func = _resolve_functional(self.functional, functional)
         target = self.target if target is None else target
         _validate_target(target)
-        X_ref = np.asarray(X_ref)
-        y_arr = None if y_ref is None else np.asarray(y_ref).ravel()
+        X_ref, y_arr = _prepare_ref_inputs(X_ref, y_ref)
 
         def evaluate(model: BaseEstimator) -> float:
             values = _model_values(model, X_ref, y_arr, func.of)
